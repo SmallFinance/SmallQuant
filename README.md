@@ -1,2 +1,3 @@
-# SmallQuant
-Modern website reference for Quantitative Finance
+## Sumamry
+
+Open source library for quantitative finance.
