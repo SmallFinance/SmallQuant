@@ -1,3 +1,3 @@
 ## Sumamry
 
-Open source library and website for quantitative finance.
+Open source library and website for quantitative finance. Better resources and marketing.
