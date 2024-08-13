@@ -4,3 +4,4 @@ Open source library and website for quantitative finance. Better resources and m
 
  * Risk analysis
  * Quantitive trading
+ * Discord community
