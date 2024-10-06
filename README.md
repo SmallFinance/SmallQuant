@@ -10,3 +10,7 @@ Open source quantitative finance with Data Science
 * GPU support
 * Derivative pricing
 * Portfolio Optimization
+
+## Usage
+
+    docker build -t smallquant .
