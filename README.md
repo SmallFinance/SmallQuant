@@ -7,6 +7,7 @@ Open source quantitative finance library with Data Science
 * GPU support
 * Derivative pricing
 * Portfolio Optimization
+* Uses QuantLib
 
 ## Usage
 
