@@ -8,6 +8,7 @@ Open source quantitative finance library with Data Science
 * Derivative pricing
 * Portfolio Optimization
 * Uses QuantLib
+* Online resources
 
 ## Usage
 
