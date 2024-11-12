@@ -12,3 +12,7 @@ Open source quantitative finance library with Data Science
 ## Usage
 
     docker build -t smallquant .
+
+## References
+
+* https://jialuechen.github.io/torchquant/
