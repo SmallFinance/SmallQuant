@@ -15,4 +15,5 @@ Open source quantitative finance library with Data Science
 
 ## References
 
-* https://jialuechen.github.io/torchquant/
+* https://jialuechen.github.io/torchquant
+* https://github.com/google/tf-quant-finance
