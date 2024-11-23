@@ -1,4 +1,4 @@
-## Sumamry
+## Summary
 
 Open source quantitative finance library with Data Science
 
