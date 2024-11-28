@@ -9,6 +9,11 @@ Open source quantitative finance library with Data Science
 * Portfolio Optimization
 * Online resources
 
+## Products
+
+* European options
+* American options
+
 ## Usage
 
     docker build -t smallquant .
