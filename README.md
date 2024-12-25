@@ -11,8 +11,9 @@ Open source quantitative finance library with Data Science
 
 ## Products
 
-* European options
-* American options
+* European option
+* American option
+* Interest Rate Swap
 
 ## Usage
 
