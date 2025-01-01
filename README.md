@@ -8,7 +8,6 @@ Open source quantitative finance library with Data Science
 * GPU support with PyTorch
 * Derivative pricing
 * Portfolio Optimization
-* Online resources
 
 ## Products
 
