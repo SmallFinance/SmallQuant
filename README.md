@@ -15,6 +15,10 @@ Open source quantitative finance library with Data Science
 * American option
 * Interest Rate Swap
 
+## Models
+
+* Hull-White model
+
 ## Usage
 
     docker build -t smallquant .
