@@ -1,6 +1,6 @@
 ## Summary
 
-Open source quantitative finance library for Data Science
+Open source quantitative finance library for Data Science (https://www.notion.so/SmallQuant-112c734a37d580119a86ebf48f2f57da)
 
 * Detailed documentation with mathematics
 * GPU support with PyTorch
