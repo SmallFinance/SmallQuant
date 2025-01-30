@@ -2,22 +2,11 @@
 
 Open source quantitative finance library with Data Science
 
-## Library
-
 * Detailed documentation with mathematics
 * GPU support with PyTorch
 * Derivative pricing
 * Portfolio Optimization
-
-## Products
-
-* European option
-* American option
-* Interest Rate Swap
-
-## Models
-
-* Hull-White model
+* Financial data science
 
 ## Usage
 
