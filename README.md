@@ -1,6 +1,6 @@
 ## Summary
 
-Open source quantitative finance library with Data Science
+Open source quantitative finance library for Data Science
 
 * Detailed documentation with mathematics
 * GPU support with PyTorch
