@@ -6,7 +6,7 @@ Open source quantitative finance library for Data Science (https://www.notion.so
 * GPU support with PyTorch
 * Derivative pricing
 * Portfolio Optimization
-* Financial data science
+* Fintech data science
 
 ## Usage
 
