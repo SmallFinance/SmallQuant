@@ -8,10 +8,6 @@ Open source quantitative finance library for Data Science (https://www.notion.so
 * Portfolio Optimization
 * Fintech data science
 
-## Usage
-
-    docker build -t smallquant .
-
 ## References
 
 * https://jialuechen.github.io/torchquant
