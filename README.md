@@ -1,6 +1,6 @@
 ## Summary
 
-Open source quantitative finance library
+Open source quantitative finance library including documentation
 
 ## References
 
