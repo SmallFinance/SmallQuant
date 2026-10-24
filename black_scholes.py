@@ -23,8 +23,8 @@ def black_scholes(S, K, T, r, sigma):
     d2 = d1 - sigma * torch.sqrt(T)
     
     # Calculate N(d1) and N(d2) using the cumulative distribution function (CDF) of the normal distribution
-    Nd1 = 0.5 * (1 + torch.erf(d1 / torch.sqrt(torch.tensor(2.0))))
-    Nd2 = 0.5 * (1 + torch.erf(d2 / torch.sqrt(torch.tensor(2.0))))
+    Nd1 = 0.5 * (1 + torch.erf(d1 / 2.0 ** 0.5))
+    Nd2 = 0.5 * (1 + torch.erf(d2 / 2.0 ** 0.5))
     
     # Calculate the call option prices using the Black-Scholes formula
     call_price = S * Nd1 - K * torch.exp(-r * T) * Nd2
@@ -32,13 +32,14 @@ def black_scholes(S, K, T, r, sigma):
     return call_price
 
 
-# Example vector inputs
-S = torch.tensor([100.0, 110.0, 120.0])  # Stock prices
-K = torch.tensor([100.0, 100.0, 100.0])  # Strike prices
-T = torch.tensor([1.0, 0.5, 0.25])       # Times to maturity (in years)
-r = torch.tensor([0.05, 0.05, 0.05])     # Risk-free interest rates
-sigma = torch.tensor([0.2, 0.25, 0.3])   # Volatilities
+if __name__ == "__main__":
+    # Example vector inputs
+    S = torch.tensor([100.0, 110.0, 120.0])  # Stock prices
+    K = torch.tensor([100.0, 100.0, 100.0])  # Strike prices
+    T = torch.tensor([1.0, 0.5, 0.25])       # Times to maturity (in years)
+    r = torch.tensor([0.05, 0.05, 0.05])     # Risk-free interest rates
+    sigma = torch.tensor([0.2, 0.25, 0.3])   # Volatilities
 
-# Calculate the option prices
-call_prices = black_scholes(S, K, T, r, sigma)
-print("European Call Option Prices:", call_prices)
+    # Calculate the option prices
+    call_prices = black_scholes(S, K, T, r, sigma)
+    print("European Call Option Prices:", call_prices)
