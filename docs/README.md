@@ -17,6 +17,7 @@ the same code runs batched on CPU, CUDA or Apple MPS.
 | [api.md](api.md) | The planned public API, module by module, with examples |
 | [greeks.md](greeks.md) | How sensitivities are computed: autograd, pathwise, likelihood ratio, smoothing |
 | [monte-carlo.md](monte-carlo.md) | Path simulation, random numbers, variance reduction, memory |
+| [time.md](time.md) | `smallquant.time`: dates, periods and day counters (pure Python, QuantLib-tested) |
 | [testing.md](testing.md) | How correctness is verified |
 | [roadmap.md](roadmap.md) | Delivery phases and what ships in each |
 

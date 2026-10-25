@@ -1,0 +1,1 @@
+"""SmallQuant: quantitative finance library."""
