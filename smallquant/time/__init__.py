@@ -1,5 +1,16 @@
-"""Dates, periods and day counting. Pure Python, no torch dependency."""
+"""Dates, periods, day counting and calendars. Pure Python, no torch dependency."""
 
+from .calendar import BusinessDayConvention, Calendar, JointCalendarRule, WesternCalendar
+from .calendars import (
+    TARGET,
+    BespokeCalendar,
+    Japan,
+    JointCalendar,
+    NullCalendar,
+    UnitedKingdom,
+    UnitedStates,
+    WeekendsOnly,
+)
 from .date import Date, Month, Weekday
 from .daycounter import (
     Actual36525,
@@ -20,14 +31,26 @@ __all__ = [
     "Actual365Fixed",
     "Actual366",
     "ActualActual",
+    "BespokeCalendar",
+    "BusinessDayConvention",
+    "Calendar",
     "Date",
     "DayCounter",
     "Frequency",
+    "Japan",
+    "JointCalendar",
+    "JointCalendarRule",
     "Month",
+    "NullCalendar",
     "OneDayCounter",
     "Period",
     "SimpleDayCounter",
+    "TARGET",
     "Thirty360",
     "TimeUnit",
+    "UnitedKingdom",
+    "UnitedStates",
     "Weekday",
+    "WeekendsOnly",
+    "WesternCalendar",
 ]

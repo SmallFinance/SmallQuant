@@ -42,9 +42,10 @@ scope. SmallQuant aims to be the maintained, PyTorch-native equivalent of TF Qua
 
 ## Non-goals
 
-- **Trade booking, market-data plumbing and calendars.** No holiday calendars, trade stores
-  or market-data connectors. Callers pass year fractions and tensors. A thin optional date
-  helper may come later (see [roadmap.md](roadmap.md)) but the core never depends on it.
+- **Trade booking and market-data plumbing.** No trade stores or market-data connectors.
+  Callers pass year fractions and tensors into the pricing core. Holiday calendars and day
+  counts live in the optional `smallquant.time` helper (see [time.md](time.md)); the core
+  never depends on them.
 - **A full QuantLib replacement.** QuantLib covers decades of instrument conventions.
   SmallQuant focuses on models and numerical methods where differentiability and parallelism
   pay off.

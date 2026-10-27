@@ -181,6 +181,10 @@ class Date:
         return _MONTH_LENGTH[int(month) - 1]
 
     @staticmethod
+    def start_of_month(d: Date) -> Date:
+        return Date(1, d.month, d.year)
+
+    @staticmethod
     def end_of_month(d: Date) -> Date:
         return Date(Date.month_length(d.month, Date.is_leap(d.year)), d.month, d.year)
 

@@ -5,8 +5,8 @@ computation, so sensitivities (Greeks) are exact derivatives obtained through au
 the same code runs batched on CPU, CUDA or Apple MPS.
 
 > Status: design stage. These documents describe the library we are building.
-> `smallquant.time` and `smallquant.models.black_scholes` exist today; see
-> [roadmap.md](roadmap.md).
+> `smallquant.time` (dates, day counts, calendars) and `smallquant.models.black_scholes`
+> exist today; see [roadmap.md](roadmap.md).
 
 ## Contents
 

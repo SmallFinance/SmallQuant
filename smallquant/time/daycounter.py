@@ -4,7 +4,7 @@ Each counter provides `day_count(d1, d2)` (integer days under the convention) an
 `year_fraction(d1, d2, ref_start=None, ref_end=None)`. The reference period is only used by
 conventions that need a coupon period (Actual/Actual ISMA, Actual/365 Canadian).
 
-Not ported: Business/252 (needs calendars) and Actual/Actual ISMA driven by a `Schedule`.
+Not ported: Business/252 and Actual/Actual ISMA driven by a `Schedule`.
 """
 
 from __future__ import annotations
