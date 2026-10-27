@@ -106,14 +106,7 @@ function `sq.price(...)`; callers can always pick an engine explicitly.
 
 ## Existing code
 
-`black_scholes.py` at the repository root becomes `smallquant/models/black_scholes.py`.
-While moving it we fix three issues:
-
-- `torch.sqrt(torch.tensor(2.0))` creates a CPU `float32` constant, which breaks CUDA inputs
-  and silently mixes precision. Use `math.sqrt(2.0)` or the shared normal CDF in
-  `math/distributions.py`.
-- Inputs become `float32` when passed as Python floats. Inputs are coerced to the library
-  default `float64` (see [conventions.md](conventions.md)).
-- Only calls are supported. Add `is_call`, a dividend yield `div`, and the put via parity.
-
-The example code at the bottom of the file moves to `examples/`.
+`smallquant/models/black_scholes.py` provides the functional closed form
+`price(*, spot, strike, expiry, rate, vol, div=0.0, is_call=True)`. Inputs coerce to the
+library default `float64`, constants use Python scalars (no CPU `torch.tensor(2.0)`), and
+puts are available via `is_call=False`. The smoke example lives in `examples/black_scholes.py`.

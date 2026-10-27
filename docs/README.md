@@ -4,8 +4,9 @@ SmallQuant is a PyTorch-native derivatives pricing library. Every price comes fr
 computation, so sensitivities (Greeks) are exact derivatives obtained through autograd, and
 the same code runs batched on CPU, CUDA or Apple MPS.
 
-> Status: design stage. These documents describe the library we are building. Only
-> `black_scholes.py` exists in the repository today; see [roadmap.md](roadmap.md).
+> Status: design stage. These documents describe the library we are building.
+> `smallquant.time` and `smallquant.models.black_scholes` exist today; see
+> [roadmap.md](roadmap.md).
 
 ## Contents
 

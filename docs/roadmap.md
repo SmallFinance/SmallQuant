@@ -9,8 +9,8 @@ Each phase ends with a tagged release, docs updated and every item covered by th
   `pytest` on CPU, linting with `ruff`.
 - `_tensor.py`: coercion, dtype and device resolution, broadcasting helpers.
 - `math/distributions.py`, `math/roots.py` (batched, implicit-gradient Newton and Brent).
-- Move `black_scholes.py` into `smallquant/models/` with the fixes listed in
-  [architecture.md](architecture.md); add puts, dividend yield, Black76 and Bachelier.
+- ~~Move `black_scholes.py` into `smallquant/models/` with puts and dividend yield.~~
+  Done. Still to add: Black76 and Bachelier.
 - `greeks.first_order`, `second_order`, `jacobian`, `bump`.
 - `vol.implied_vol` and `vol.implied_normal_vol`.
 

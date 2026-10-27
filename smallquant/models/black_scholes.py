@@ -1,0 +1,59 @@
+"""Black-Scholes-Merton closed form for European options."""
+
+import math
+
+import torch
+
+
+def _as_tensors(*values):
+    """Coerce inputs to tensors sharing dtype/device; default dtype is float64."""
+    tensors = [v for v in values if isinstance(v, torch.Tensor)]
+    if tensors:
+        dtype = tensors[0].dtype
+        device = tensors[0].device
+        for t in tensors[1:]:
+            if t.dtype != dtype or t.device != device:
+                raise ValueError("all tensor inputs must share the same dtype and device")
+    else:
+        dtype = torch.float64
+        device = None
+    return tuple(torch.as_tensor(v, dtype=dtype, device=device) for v in values)
+
+
+def price(*, spot, strike, expiry, rate, vol, div=0.0, is_call=True):
+    """European Black-Scholes-Merton price.
+
+    Args:
+        spot: underlying spot
+        strike: strike
+        expiry: time to expiry in years
+        rate: continuously compounded risk-free rate
+        vol: volatility
+        div: continuous dividend / carry yield
+        is_call: True for call, False for put (may be a bool or a boolean tensor)
+
+    Returns:
+        Option price tensor, broadcast from the inputs.
+    """
+    spot, strike, expiry, rate, vol, div = _as_tensors(
+        spot, strike, expiry, rate, vol, div
+    )
+
+    sqrt_t = torch.sqrt(expiry)
+    d1 = (torch.log(spot / strike) + (rate - div + 0.5 * vol**2) * expiry) / (
+        vol * sqrt_t
+    )
+    d2 = d1 - vol * sqrt_t
+
+    inv_sqrt2 = 1.0 / math.sqrt(2.0)
+    nd1 = 0.5 * (1.0 + torch.erf(d1 * inv_sqrt2))
+    nd2 = 0.5 * (1.0 + torch.erf(d2 * inv_sqrt2))
+
+    discount = torch.exp(-rate * expiry)
+    forward_factor = torch.exp(-div * expiry)
+    call = spot * forward_factor * nd1 - strike * discount * nd2
+    put = strike * discount * (1.0 - nd2) - spot * forward_factor * (1.0 - nd1)
+
+    if isinstance(is_call, torch.Tensor):
+        return torch.where(is_call, call, put)
+    return call if is_call else put

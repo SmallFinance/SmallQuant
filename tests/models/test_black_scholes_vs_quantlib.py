@@ -1,9 +1,9 @@
-"""Vanilla Black-Scholes calls against QuantLib's AnalyticEuropeanEngine."""
+"""Vanilla Black-Scholes calls/puts against QuantLib's AnalyticEuropeanEngine."""
 
 import pytest
 import torch
 
-from black_scholes import black_scholes
+from smallquant.models.black_scholes import price
 
 ql = pytest.importorskip("tests.reference.ql")
 
@@ -28,7 +28,7 @@ CASES = {
 }
 
 
-def price_and_greeks(spot, strike, days, rate, vol):
+def price_and_greeks(spot, strike, days, rate, vol, div=0.0, is_call=True):
     """SmallQuant price, first-order Greeks and gamma, all from autograd."""
     f64 = dict(dtype=torch.float64)
     S = torch.as_tensor(spot, **f64).requires_grad_()
@@ -36,14 +36,15 @@ def price_and_greeks(spot, strike, days, rate, vol):
     T = (torch.as_tensor(days, **f64) / 365.0).requires_grad_()
     r = torch.as_tensor(rate, **f64).requires_grad_()
     sigma = torch.as_tensor(vol, **f64).requires_grad_()
+    q = torch.as_tensor(div, **f64)
 
-    price = black_scholes(S, K, T, r, sigma)
+    value = price(spot=S, strike=K, expiry=T, rate=r, vol=sigma, div=q, is_call=is_call)
     delta, dexpiry, rho, vega = torch.autograd.grad(
-        price.sum(), (S, T, r, sigma), create_graph=True
+        value.sum(), (S, T, r, sigma), create_graph=True
     )
     (gamma,) = torch.autograd.grad(delta.sum(), S)
     return {
-        "price": price.detach(),
+        "price": value.detach(),
         "delta": delta.detach(),
         "gamma": gamma,
         "vega": vega.detach(),
@@ -58,6 +59,25 @@ def test_matches_quantlib(case):
     ours = price_and_greeks(spot, strike, days, rate, vol)
     ref = ql.european(spot=spot, strike=strike, days=days, rate=rate, vol=vol)
 
+    for name, value in ours.items():
+        assert value.item() == pytest.approx(getattr(ref, name), rel=REL, abs=ABS), name
+
+
+@pytest.mark.parametrize("case", CASES.values(), ids=CASES.keys())
+def test_put_matches_quantlib(case):
+    spot, strike, days, rate, vol = case
+    ours = price_and_greeks(spot, strike, days, rate, vol, is_call=False)
+    ref = ql.european(
+        spot=spot, strike=strike, days=days, rate=rate, vol=vol, is_call=False
+    )
+
+    for name, value in ours.items():
+        assert value.item() == pytest.approx(getattr(ref, name), rel=REL, abs=ABS), name
+
+
+def test_dividend_yield_matches_quantlib():
+    ours = price_and_greeks(100.0, 100.0, 365, 0.05, 0.20, div=0.03)
+    ref = ql.european(spot=100.0, strike=100.0, days=365, rate=0.05, vol=0.20, div=0.03)
     for name, value in ours.items():
         assert value.item() == pytest.approx(getattr(ref, name), rel=REL, abs=ABS), name
 
@@ -93,3 +113,8 @@ def test_batch_matches_quantlib():
             assert values[i].item() == pytest.approx(
                 getattr(ref, name), rel=REL, abs=ABS
             ), (name, i)
+
+
+def test_python_floats_default_to_float64():
+    value = price(spot=100.0, strike=100.0, expiry=1.0, rate=0.05, vol=0.2)
+    assert value.dtype == torch.float64
