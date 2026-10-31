@@ -766,7 +766,14 @@ SmallQuant licence if code is copied.
 
 Most production pricing code is proprietary: bank in-house libraries and vendor products such
 as Numerix, FINCAD, Murex, Bloomberg DLIB, MATLAB Financial Toolbox and MatLogica AADC. They
-are not available as references.
+are not available as references, but they set the bar users will compare SmallQuant against.
+
+**Commercial products (benchmarks of expectation, not references)**
+
+| Product | Website | Licence | Relevance |
+| --- | --- | --- | --- |
+| Numerix | numerix.com | Commercial enterprise licence | Broad cross-asset pricing, XVA and risk for banks, insurers and asset managers. Defines the breadth SmallQuant deliberately does not attempt (PRD-05). |
+| Vola Dynamics | voladynamics.com | Commercial; pricing on request | Arbitrage-free volatility surface fitting and options pricing for equity and FICC options (stocks, ETFs, indices, futures), plus VIX, variance and volatility swaps. Ships SVI, SSVI and SABR alongside its own parametric curves, with C++, Python, Java and C# libraries. Used by institutional options desks. The bar for VOL-05 and VOL-06: surfaces must stay arbitrage-free and stable through stressed markets without manual tuning. |
 
 **Differentiable or GPU pricing (closest to SmallQuant)**
 
