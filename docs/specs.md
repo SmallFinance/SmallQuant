@@ -62,6 +62,7 @@ since been fixed.
 - [Appendix B Decisions requiring an owner](#appendix-b-decisions-requiring-an-owner)
 - [Appendix C Code and evidence map](#appendix-c-code-and-evidence-map)
 - [Appendix D Reference sources](#appendix-d-reference-sources)
+- [Appendix E Related libraries](#appendix-e-related-libraries)
 
 ## 1 How to use this specification
 
@@ -754,3 +755,56 @@ calendars and business-day conventions (`6c7e4e5`).
 | S11 | QuantLib (quantlib.org): reference implementation for dates, calendars, closed forms |
 | S12 | TF Quant Finance (github.com/google/tf-quant-finance): prior art on TensorFlow |
 | S13 | torchquant (jialuechen.github.io/torchquant): prior PyTorch effort |
+
+## Appendix E Related libraries
+
+Open-source libraries checked on 1 November 2026 (GitHub repository, licence file and last
+push). Licences matter for one reason here: SmallQuant may read, test against and learn from
+any of them, but copying code in ties SmallQuant to that licence (D01). Copyleft (GPL, AGPL)
+and non-commercial terms are fine for test-only references and incompatible with a permissive
+SmallQuant licence if code is copied.
+
+Most production pricing code is proprietary: bank in-house libraries and vendor products such
+as Numerix, FINCAD, Murex, Bloomberg DLIB, MATLAB Financial Toolbox and MatLogica AADC. They
+are not available as references.
+
+**Differentiable or GPU pricing (closest to SmallQuant)**
+
+| Library | Repository | Licence | Relevance |
+| --- | --- | --- | --- |
+| TF Quant Finance | `google/tf-quant-finance` | Apache-2.0 | The design SmallQuant follows: rates, vol models, PDE and Monte Carlo on TensorFlow. README states it is archived and unmaintained; occasional build fixes only. Reference for API and algorithms. |
+| torchquant | `jialuechen/torchquant` | Apache-2.0 | Small PyTorch pricing effort. |
+| pfhedge | `pfnet-research/pfhedge` | MIT | PyTorch deep hedging: instruments, Black-Scholes and Heston paths, hedging losses. Last push August 2024. Model for ML built on top of SmallQuant (PRD-05). |
+| torchsde | `google-research/torchsde` | Apache-2.0 | Differentiable SDE solvers for neural SDEs. Archived. |
+| finmath-lib | `finmath/finmath-lib` | Apache-2.0 | Java, with built-in AAD through Monte Carlo, rates and LIBOR market models. Closest prior art for differentiable Monte Carlo and early exercise (sections 13–14). |
+| XAD | `auto-differentiation/xad` | AGPL-3.0 | C++ and Python AAD engine, can make QuantLib differentiable. Benchmark comparison for autograd Greeks (PRF-04). Do not copy code. |
+
+**Python pricing (independent test references, QA-01 kind 2)**
+
+| Library | Repository | Licence | Relevance |
+| --- | --- | --- | --- |
+| FinancePy | `domokane/FinancePy` | GPL-3.0 | Bonds, swaps, swaptions, credit, FX and equity options. Second reference beside QuantLib. Test-only. |
+| rateslib | `attack68/rateslib` | Source-available non-commercial, or commercial subscription | Curve building and fixed income with automatic differentiation. Reference for RTS-02 bucketed deltas. Test-only. |
+| PyFENG | `quants-net/PyFENG` | GPL-2.0 | Heston, SABR variants and Bachelier from the research literature. Reference for MOD-05 and SABR edge cases. Test-only. |
+| py_vollib | `vollib/py_vollib` | MIT | Black, Black-Scholes and Black76 prices and implied vol via Let's Be Rational. Direct reference for VOL-01 and D05. |
+
+**Other languages**
+
+| Library | Repository | Licence | Relevance |
+| --- | --- | --- | --- |
+| QuantLib | `lballabio/QuantLib` | BSD-style | Primary test reference (S11). Has reference engines for every instrument in section 11: barrier, double and partial barrier, digital and one-touch, Asian (analytic geometric; approximate or Monte Carlo arithmetic), lookback, American, plus cliquet, chooser, compound, basket, Margrabe and variance swaps. |
+| OpenGamma Strata | `OpenGamma/Strata` | Apache-2.0 | Java rates and credit with market conventions. Reference for RTS-04 schedules. |
+| Open Source Risk Engine | `OpenSourceRisk/Engine` | BSD-style | XVA and portfolio risk built on QuantLib. Reference for the later XVA item. |
+| RustQuant | `avhz/RustQuant` | Apache-2.0 | Options, rates, stochastic processes and its own autodiff. |
+
+**Trading and portfolio side (outside scope, PRD-05)**
+
+| Library | Repository | Licence | Area |
+| --- | --- | --- | --- |
+| vectorbt | `polakowo/vectorbt` | Apache-2.0 with Commons Clause | Vectorised backtesting |
+| backtrader | `mementum/backtrader` | GPL-3.0 | Backtesting; last push August 2024 |
+| zipline-reloaded | `stefan-jansen/zipline-reloaded` | Apache-2.0 | Backtesting |
+| PyPortfolioOpt | `PyPortfolio/PyPortfolioOpt` | MIT | Portfolio optimisation |
+| Riskfolio-Lib | `dcajasn/Riskfolio-Lib` | BSD-3-Clause | Portfolio optimisation |
+| cvxportfolio | `cvxgrp/cvxportfolio` | GPL-3.0 | Portfolio optimisation |
+| OpenBB | OpenBB | Apache-2.0 | Market data and research platform |
