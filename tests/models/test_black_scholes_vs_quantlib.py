@@ -118,3 +118,39 @@ def test_batch_matches_quantlib():
 def test_python_floats_default_to_float64():
     value = price(spot=100.0, strike=100.0, expiry=1.0, rate=0.05, vol=0.2)
     assert value.dtype == torch.float64
+
+
+@pytest.mark.parametrize("is_call", [True, False], ids=["call", "put"])
+@pytest.mark.parametrize("spot", [80.0, 100.0, 120.0])
+def test_zero_expiry_is_intrinsic_with_finite_gradients(spot, is_call):
+    S = torch.tensor(spot, dtype=torch.float64, requires_grad=True)
+    T = torch.tensor(0.0, dtype=torch.float64, requires_grad=True)
+    sigma = torch.tensor(0.2, dtype=torch.float64, requires_grad=True)
+    value = price(spot=S, strike=100.0, expiry=T, rate=0.05, vol=sigma, is_call=is_call)
+
+    intrinsic = max(spot - 100.0, 0.0) if is_call else max(100.0 - spot, 0.0)
+    assert value.item() == intrinsic
+    for grad in torch.autograd.grad(value, (S, T, sigma)):
+        assert torch.isfinite(grad)
+
+
+@pytest.mark.parametrize("is_call", [True, False], ids=["call", "put"])
+def test_zero_vol_is_discounted_forward_intrinsic(is_call):
+    S = torch.tensor([80.0, 100.0, 120.0], dtype=torch.float64, requires_grad=True)
+    sigma = torch.tensor(0.0, dtype=torch.float64, requires_grad=True)
+    value = price(spot=S, strike=100.0, expiry=1.0, rate=0.05, vol=sigma, div=0.02,
+                  is_call=is_call)
+
+    forward_gap = S.detach() * torch.exp(torch.tensor(-0.02, dtype=torch.float64)) - 100.0 * (
+        torch.exp(torch.tensor(-0.05, dtype=torch.float64))
+    )
+    expected = torch.relu(forward_gap if is_call else -forward_gap)
+    torch.testing.assert_close(value.detach(), expected, rtol=0, atol=1e-14)
+    for grad in torch.autograd.grad(value.sum(), (S, sigma)):
+        assert torch.isfinite(grad).all()
+
+
+def test_short_expiry_converges_to_intrinsic():
+    near = price(spot=120.0, strike=100.0, expiry=1e-12, rate=0.05, vol=0.2)
+    at = price(spot=120.0, strike=100.0, expiry=0.0, rate=0.05, vol=0.2)
+    assert near.item() == pytest.approx(at.item(), abs=1e-9)

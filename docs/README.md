@@ -21,6 +21,7 @@ the same code runs batched on CPU, CUDA or Apple MPS.
 | [time.md](time.md) | `smallquant.time`: dates, periods and day counters (pure Python, QuantLib-tested) |
 | [testing.md](testing.md) | How correctness is verified |
 | [roadmap.md](roadmap.md) | Delivery phases and what ships in each |
+| [specs.md](specs.md) | Production build scope: numbered requirements, decisions and acceptance tests |
 
 ## Quick look
 
@@ -35,7 +36,9 @@ price = sq.models.black_scholes.price(
     spot=spot, strike=100.0, expiry=1.0, rate=0.05, vol=vol, is_call=True
 )
 
-g = sq.greeks.first_order(price, {"spot": spot, "vol": vol})
-g["spot"]  # delta, one per spot
-g["vol"]   # vega, summed over the batch because vol is a scalar
+delta, vega = torch.autograd.grad(price.sum(), (spot, vol))
+delta  # one per spot
+vega   # summed over the batch because vol is a scalar
 ```
+
+The planned `sq.greeks.first_order` helper wraps this call; see [greeks.md](greeks.md).

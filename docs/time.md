@@ -59,6 +59,6 @@ over the whole range, and random reference periods, plus calendar holiday grids 
 `adjust` / `advance` / `business_days_between` and holiday lists. Year fractions are compared
 to a relative 1e-14.
 
-Reference behaviour is QuantLib 1.43. QuantLib changes edge cases between releases (30/360 US
+Reference behaviour is QuantLib 1.44 (the version in `uv.lock`). QuantLib changes edge cases between releases (30/360 US
 reordered its February checks), so a failure after a QuantLib upgrade means a port needs
 updating.

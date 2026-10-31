@@ -5,8 +5,8 @@ Each phase ends with a tagged release, docs updated and every item covered by th
 
 ## Phase 0: foundation
 
-- Package skeleton (`pyproject.toml`, `smallquant/`, `tests/`, `examples/`), CI running
-  `pytest` on CPU, linting with `ruff`.
+- ~~Package skeleton (`pyproject.toml`, `smallquant/`, `tests/`, `examples/`), CI running
+  `pytest` on CPU.~~ Done. Still to add: linting with `ruff`.
 - `_tensor.py`: coercion, dtype and device resolution, broadcasting helpers.
 - `math/distributions.py`, `math/roots.py` (batched, implicit-gradient Newton and Brent).
 - ~~Move `black_scholes.py` into `smallquant/models/` with puts and dividend yield.~~
@@ -58,7 +58,7 @@ sensitivities.
 ## Later, not yet scheduled
 
 - Multi-asset models with correlation (basket and spread options).
-- Optional date helpers (year fractions, schedules) in a separate `smallquant.dates`
-  module that the core does not import.
+- `Schedule`, `Business252` and further country calendars in `smallquant.time` (dates, day
+  counts and holiday calendars already shipped; see [time.md](time.md)).
 - XVA building blocks (exposure simulation on a portfolio).
 - Documentation site built from these Markdown files.

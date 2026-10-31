@@ -109,4 +109,6 @@ function `sq.price(...)`; callers can always pick an engine explicitly.
 `smallquant/models/black_scholes.py` provides the functional closed form
 `price(*, spot, strike, expiry, rate, vol, div=0.0, is_call=True)`. Inputs coerce to the
 library default `float64`, constants use Python scalars (no CPU `torch.tensor(2.0)`), and
-puts are available via `is_call=False`. The smoke example lives in `examples/black_scholes.py`.
+puts are available via `is_call=False`. Zero expiry or zero vol return the intrinsic limit
+with finite gradients. `import smallquant as sq` exposes it as `sq.models.black_scholes`. The
+smoke example lives in `examples/black_scholes.py`.

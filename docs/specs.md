@@ -18,6 +18,21 @@ Source: `smallquant/` and `tests/` in the repository. Test run: 197 passed in 58
 **Status:** design stage. `smallquant.time` and `smallquant.models.black_scholes` exist; every
 other module in this scope is planned. Nothing here is a claim that a planned feature works.
 
+**Resolved since baseline:** the baseline observations below are kept as recorded; these have
+since been fixed.
+
+- MOD-02 / MOD-03: Black-Scholes returns the intrinsic limit at `expiry <= 0` and `vol <= 0`
+  with finite gradients (AT-08 tests added).
+- API-02: `import smallquant as sq` exposes `sq.models.black_scholes`; the core still does not
+  import `smallquant.time` (tested).
+- API-04: `pyproject.toml` has a hatchling build backend and the wheel installs with PyTorch
+  only. Licence, PyPI name and versioning (API-05, API-06) remain open.
+- QA-03 / ENV-04: GitHub Actions CI runs `pytest` and `uv build` on macOS CPU for Python 3.10
+  and 3.13. `ruff` is not yet enforced: the default rules report 60 findings and 14 files
+  need reformatting, which is a separate clean-up.
+- DOC-03 / TIM-05: the root README, the `docs/README.md` quick look, the roadmap's stale
+  `smallquant.dates` item and the QuantLib reference version (now 1.44) are updated.
+
 ## Contents
 
 1. [How to use this specification](#1-how-to-use-this-specification)
