@@ -1,4 +1,4 @@
-# SmallQuant
+## Summary
 
 PyTorch-native derivatives pricing. Prices are tensor computations, so Greeks are exact
 derivatives from autograd and the same code runs batched on CPU, CUDA or Apple MPS.
