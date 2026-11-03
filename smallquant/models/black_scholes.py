@@ -24,12 +24,12 @@ def _as_tensors(*values):
 
 def price(
     *,
-    spot: float | torch.Tensor,
-    strike: float | torch.Tensor,
-    expiry: float | torch.Tensor,
-    rate: float | torch.Tensor,
-    vol: float | torch.Tensor,
-    div: float | torch.Tensor = 0.0,
+    spot: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    vol: torch.Tensor,
+    div: torch.Tensor | None = None,
     is_call: bool | torch.Tensor = True,
 ) -> torch.Tensor:
     """European Black-Scholes-Merton price.
@@ -40,7 +40,7 @@ def price(
         expiry: time to expiry in years
         rate: continuously compounded risk-free rate
         vol: volatility
-        div: continuous dividend / carry yield
+        div: continuous dividend / carry yield; defaults to a zero tensor
         is_call: True for call, False for put (may be a bool or a boolean tensor)
 
     Returns:
@@ -50,9 +50,15 @@ def price(
     intrinsic value ``max(+/-(spot * e^{-div T} - strike * e^{-rate T}), 0)``, with finite
     gradients.
     """
-    spot, strike, expiry, rate, vol, div = _as_tensors(
-        spot, strike, expiry, rate, vol, div
-    )
+    if div is None:
+        spot, strike, expiry, rate, vol = _as_tensors(
+            spot, strike, expiry, rate, vol
+        )
+        div = torch.zeros((), dtype=spot.dtype, device=spot.device)
+    else:
+        spot, strike, expiry, rate, vol, div = _as_tensors(
+            spot, strike, expiry, rate, vol, div
+        )
 
     # Mask degenerate inputs before sqrt/division so the unused branch has no NaN gradient.
     degenerate = (expiry <= 0) | (vol <= 0)

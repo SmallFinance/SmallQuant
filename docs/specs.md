@@ -32,6 +32,8 @@ since been fixed.
   need reformatting, which is a separate clean-up.
 - DOC-03 / TIM-05: the root README, the `docs/README.md` quick look, the roadmap's stale
   `smallquant.dates` item and the QuantLib reference version (now 1.44) are updated.
+- TEN-01: public numeric arguments are `torch.Tensor` only (no raw Python `float`/`int` on
+  the public surface). Code still coerces numbers today; alignment is outstanding.
 
 ## Contents
 
@@ -129,7 +131,8 @@ researchers combining classical pricing with ML in one PyTorch graph.
 | Area | Final instruction |
 | --- | --- |
 | Framework | PyTorch only at runtime. No TensorFlow, JAX or NumPy code paths in `smallquant/`. |
-| Default dtype | `float64`. Python numbers never force `float32`. MPS falls back to `float32` with a one-time warning. |
+| Tensor inputs | Public numeric arguments are `torch.Tensor` only. No Python `float`/`int`, NumPy scalars/arrays, or other raw types on the public surface. |
+| Default dtype | `float64`. MPS falls back to `float32` with a one-time warning. |
 | Batching | Every public function broadcasts its tensor inputs. No Python loops over batch elements. |
 | Device | Outputs live on the inputs' device. Mixed devices raise; nothing is copied silently. |
 | Branching | No Python `if` on tensor values. Use `torch.where`, and mask inputs before unsafe operations. |
@@ -156,7 +159,7 @@ lines). There are 197 tests, all comparing against QuantLib, all passing on CPU.
 | Capability | What exists now | What must be delivered |
 | --- | --- | --- |
 | Package entry point | `smallquant/__init__.py` is a docstring only; `sq.models` raises `AttributeError` | Re-exports per section 18 so `import smallquant as sq` exposes every public module |
-| Tensor coercion | Private `_as_tensors` inside `black_scholes.py` | Shared `_tensor.py` implementing section 6, used by every module |
+| Tensor contract | Private `_as_tensors` in `black_scholes.py` still coerces Python numbers | Shared `_tensor.py` per section 6; public APIs accept `torch.Tensor` only (TEN-01) |
 | Closed forms | Black-Scholes-Merton call/put with dividend yield | Black76, Bachelier, Merton jump, SABR implied vol, Heston characteristic function |
 | Greeks | Users call `torch.autograd` themselves | `sq.greeks` helpers for first order, second order, Jacobian and bump checks |
 | Implied vol | None | Batched Black and Bachelier implied vol with implicit gradients |
@@ -197,19 +200,22 @@ release check.
 
 ## 6 Tensor, dtype and device contract
 
-**TEN-01 Confirmed requirement.** Public functions accept `torch.Tensor`, Python numbers or
-anything `torch.as_tensor` accepts. All tensor arguments broadcast under PyTorch rules and
-the output shape is the broadcast shape.
+**TEN-01 Confirmed requirement.** Public numeric arguments are `torch.Tensor` only. The
+library does not accept raw Python numbers (`float`, `int`), NumPy scalars/arrays, or other
+array-likes on the public surface; callers pass tensors. Non-numeric flags such as
+`is_call` may remain `bool` or a bool tensor. All tensor arguments broadcast under PyTorch
+rules and the output shape is the broadcast shape.
 
 **TEN-02 Confirmed requirement.** dtype resolution order: the `dtype=` argument if given,
-otherwise the highest floating dtype among tensor inputs, otherwise `float64`. Python
-numbers never force `float32`.
+otherwise the highest floating dtype among tensor inputs, otherwise `float64`.
 
-**TEN-03 Current implementation.** `black_scholes._as_tensors` takes the dtype and device of
-the first tensor input and raises `ValueError` if any other tensor differs in dtype or
-device. It has no `dtype=` argument. A `float32` tensor input produces a `float32` result,
-which is consistent with TEN-02, but a `float32` and a `float64` tensor together raise
-rather than promoting. Replace it with the shared `_tensor.py` implementation.
+**TEN-03 Current implementation.** `black_scholes._as_tensors` still coerces Python numbers
+via `torch.as_tensor`, takes the dtype and device of the first tensor input, and raises
+`ValueError` if any other tensor differs in dtype or device. It has no `dtype=` argument. A
+`float32` tensor input produces a `float32` result, which is consistent with TEN-02, but a
+`float32` and a `float64` tensor together raise rather than promoting. Replace it with the
+shared `_tensor.py` implementation that enforces TEN-01 (tensors only) and the promotion
+rules below.
 
 **TEN-04 Build requirement.** On MPS, when resolution would give `float64`, use `float32`
 and emit one `UserWarning` per process. Never raise because of the MPS fallback. Explicit
@@ -224,10 +230,10 @@ floating-point input. No in-place operations on tensors that may require grad. N
 `if` on tensor values. Mask inputs before unsafe operations so unselected branches cannot
 produce NaN gradients.
 
-**TEN-07 Build requirement.** `_tensor.py` provides: `coerce(*values, dtype=None)` returning
-tensors on a common dtype/device, `common_device`, `broadcast_shapes`, `zeros_like_inputs`
-style constant helpers, and the MPS fallback. It is private and may change, but every
-public function uses it.
+**TEN-07 Build requirement.** `_tensor.py` provides: helpers that validate and align
+`torch.Tensor` inputs on a common dtype/device (rejecting non-tensors per TEN-01),
+`common_device`, `broadcast_shapes`, `zeros_like_inputs` style constant helpers, and the MPS
+fallback. It is private and may change, but every public function uses it.
 
 **TEN-08 Confirmed requirement.** Extra shape-defining dimensions are documented per
 function in a fixed position: paths, then time, then state dimension.
@@ -266,7 +272,8 @@ generator=None)`; see section 13 for Sobol scrambling and Brownian bridge.
 exists. It prices calls and puts with continuous dividend yield, accepts a bool or bool
 tensor `is_call`, defaults to `float64` and matches QuantLib's `AnalyticEuropeanEngine` to
 relative 1e-9 for price, delta, gamma, vega, rho and the expiry derivative over eleven cases
-including negative rates and five-year expiries.
+including negative rates and five-year expiries. Per TEN-01 the production signature takes
+tensors for all numeric arguments; the current helper still coerces Python numbers.
 
 **MOD-02 Current implementation.** At `expiry=0` the function returns NaN because it
 divides by `vol * sqrt(expiry)`. At `vol=0` the price is the correct discounted intrinsic
@@ -624,7 +631,7 @@ not been exercised.
 | Test ID | Minimum acceptance scenario |
 | --- | --- |
 | AT-01 | `import smallquant as sq` exposes every API-01 name; every docs and README example runs. |
-| AT-02 | Mixed Python numbers and `float32` tensors give `float32`; Python numbers alone give `float64`; `float32` + `float64` tensors give `float64`; `dtype=` overrides. |
+| AT-02 | Passing a Python `float`/`int` (or other non-tensor) as a public numeric argument raises; `float32` + `float64` tensors give `float64`; `dtype=` overrides. |
 | AT-03 | Mixed-device inputs raise; outputs land on the input device; MPS without `float64` warns once and returns `float32`. |
 | AT-04 | A batched call equals the stack of individual calls for every public pricing function. |
 | AT-05 | `gradcheck` and `gradgradcheck` pass in `float64` for every differentiable public function. |
