@@ -1,5 +1,7 @@
 """Black-Scholes-Merton closed form for European options."""
 
+from __future__ import annotations
+
 import math
 
 import torch
@@ -20,7 +22,16 @@ def _as_tensors(*values):
     return tuple(torch.as_tensor(v, dtype=dtype, device=device) for v in values)
 
 
-def price(*, spot, strike, expiry, rate, vol, div=0.0, is_call=True):
+def price(
+    *,
+    spot: float | torch.Tensor,
+    strike: float | torch.Tensor,
+    expiry: float | torch.Tensor,
+    rate: float | torch.Tensor,
+    vol: float | torch.Tensor,
+    div: float | torch.Tensor = 0.0,
+    is_call: bool | torch.Tensor = True,
+) -> torch.Tensor:
     """European Black-Scholes-Merton price.
 
     Args:
