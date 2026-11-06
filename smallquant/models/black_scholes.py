@@ -81,3 +81,30 @@ def price(
     put = torch.where(degenerate, put_limit, put)
 
     return torch.where(is_call, call, put)
+
+
+def step(
+    *,
+    spot: torch.Tensor,
+    times: torch.Tensor,
+    normals: torch.Tensor,
+    rate: torch.Tensor,
+    vol: torch.Tensor,
+    div: torch.Tensor,
+) -> torch.Tensor:
+    """Exact lognormal paths, shape ``[num_paths, num_steps + 1, dim]``.
+
+    ``normals`` are standard normal Wiener increments on each step of
+    ``times`` (the grid includes 0). Flat rates and volatility make this the
+    exact transition, which is what QuantLib's Black-Scholes process applies
+    on each grid interval.
+    """
+    spot, times, normals, rate, vol, div = _as_tensors(spot, times, normals, rate, vol, div)
+    num_paths, num_steps, dim = normals.shape
+    interval = (times[1:] - times[:-1]).reshape(1, num_steps, 1)
+    wiener = torch.cumsum(normals * torch.sqrt(interval), dim=1)
+    elapsed = times[1:].reshape(1, num_steps, 1)
+    exponent = (rate - div - 0.5 * vol * vol) * elapsed + vol * wiener
+    future = spot * torch.exp(exponent)
+    initial = torch.broadcast_to(spot, (num_paths, 1, dim)).clone()
+    return torch.cat((initial, future), dim=1)
