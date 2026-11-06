@@ -1,5 +1,5 @@
 """Numerical pricing engines."""
 
-from . import monte_carlo
+from . import finite_difference, monte_carlo
 
-__all__ = ["monte_carlo"]
+__all__ = ["finite_difference", "monte_carlo"]
