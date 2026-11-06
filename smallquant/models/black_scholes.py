@@ -29,8 +29,8 @@ def price(
     expiry: torch.Tensor,
     rate: torch.Tensor,
     vol: torch.Tensor,
-    div: torch.Tensor | None = None,
-    is_call: bool | torch.Tensor = True,
+    div: torch.Tensor,
+    is_call: torch.Tensor,
 ) -> torch.Tensor:
     """European Black-Scholes-Merton price.
 
@@ -40,8 +40,8 @@ def price(
         expiry: time to expiry in years
         rate: continuously compounded risk-free rate
         vol: volatility
-        div: continuous dividend / carry yield; defaults to a zero tensor
-        is_call: True for call, False for put (may be a bool or a boolean tensor)
+        div: continuous dividend / carry yield
+        is_call: boolean tensor, true for a call and false for a put
 
     Returns:
         Option price tensor, broadcast from the inputs.
@@ -50,15 +50,9 @@ def price(
     intrinsic value ``max(+/-(spot * e^{-div T} - strike * e^{-rate T}), 0)``, with finite
     gradients.
     """
-    if div is None:
-        spot, strike, expiry, rate, vol = _as_tensors(
-            spot, strike, expiry, rate, vol
-        )
-        div = torch.zeros((), dtype=spot.dtype, device=spot.device)
-    else:
-        spot, strike, expiry, rate, vol, div = _as_tensors(
-            spot, strike, expiry, rate, vol, div
-        )
+    spot, strike, expiry, rate, vol, div = _as_tensors(
+        spot, strike, expiry, rate, vol, div
+    )
 
     # Mask degenerate inputs before sqrt/division so the unused branch has no NaN gradient.
     degenerate = (expiry <= 0) | (vol <= 0)
@@ -86,6 +80,4 @@ def price(
     call = torch.where(degenerate, call_limit, call)
     put = torch.where(degenerate, put_limit, put)
 
-    if isinstance(is_call, torch.Tensor):
-        return torch.where(is_call, call, put)
-    return call if is_call else put
+    return torch.where(is_call, call, put)
