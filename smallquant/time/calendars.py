@@ -546,3 +546,49 @@ class Japan(WesternCalendar):
         ):
             return False
         return True
+
+
+class Australia(WesternCalendar):
+    """Australia settlement and ASX calendars."""
+
+    class Market(Enum):
+        Settlement = "settlement"
+        ASX = "asx"
+
+    def __init__(self, market: Market = Market.Settlement):
+        super().__init__()
+        self._market = market
+
+    @property
+    def name(self) -> str:
+        if self._market == self.Market.ASX:
+            return "Australia exchange"
+        return "Australia settlement"
+
+    def _is_business_day(self, date: Date) -> bool:
+        w, d, m, y = date.weekday, date.day, date.month, date.year
+        dd = date.day_of_year
+        em = self.easter_monday(y)
+        new_year = (d == 1 or (d in (2, 3) and w == Weekday.Monday)) and m == Month.January
+        australia_day = (d == 26 or (d in (27, 28) and w == Weekday.Monday)) and m == Month.January
+        christmas = (d == 25 or (d == 27 and w in (Weekday.Monday, Weekday.Tuesday))) and m == Month.December
+        boxing = (d == 26 or (d == 28 and w in (Weekday.Monday, Weekday.Tuesday))) and m == Month.December
+        queens = d > 7 and d <= 14 and w == Weekday.Monday and m == Month.June
+        mourning = d == 22 and m == Month.September and y == 2022
+        holiday = (
+            self.is_weekend(w)
+            or new_year
+            or australia_day
+            or dd == em - 3
+            or dd == em
+            or (d == 25 and m == Month.April)
+            or queens
+            or christmas
+            or boxing
+            or mourning
+        )
+        if self._market == self.Market.Settlement:
+            bank = d <= 7 and w == Weekday.Monday and m == Month.August
+            labour = d <= 7 and w == Weekday.Monday and m == Month.October
+            holiday = holiday or bank or labour
+        return not holiday

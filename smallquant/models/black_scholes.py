@@ -2,24 +2,16 @@
 
 from __future__ import annotations
 
-import math
-
 import torch
 
+from smallquant._tensor import align, check
+from smallquant.math.distributions import normal_cdf
 
-def _as_tensors(*values):
-    """Coerce inputs to tensors sharing dtype/device; default dtype is float64."""
-    tensors = [v for v in values if isinstance(v, torch.Tensor)]
-    if tensors:
-        dtype = tensors[0].dtype
-        device = tensors[0].device
-        for t in tensors[1:]:
-            if t.dtype != dtype or t.device != device:
-                raise ValueError("all tensor inputs must share the same dtype and device")
-    else:
-        dtype = torch.float64
-        device = None
-    return tuple(torch.as_tensor(v, dtype=dtype, device=device) for v in values)
+
+def _flag(is_call: torch.Tensor | bool, like: torch.Tensor) -> torch.Tensor:
+    if isinstance(is_call, bool):
+        return torch.tensor(is_call, device=like.device)
+    return is_call.to(device=like.device)
 
 
 def price(
@@ -30,7 +22,8 @@ def price(
     rate: torch.Tensor,
     vol: torch.Tensor,
     div: torch.Tensor,
-    is_call: torch.Tensor,
+    is_call: torch.Tensor | bool,
+    dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     """European Black-Scholes-Merton price.
 
@@ -50,9 +43,14 @@ def price(
     intrinsic value ``max(+/-(spot * e^{-div T} - strike * e^{-rate T}), 0)``, with finite
     gradients.
     """
-    spot, strike, expiry, rate, vol, div = _as_tensors(
-        spot, strike, expiry, rate, vol, div
+    spot, strike, expiry, rate, vol, div = align(
+        spot, strike, expiry, rate, vol, div, dtype=dtype
     )
+    is_call = _flag(is_call, spot)
+    check("spot", spot, spot > 0)
+    check("strike", strike, strike > 0)
+    check("vol", vol, vol >= 0)
+    check("expiry", expiry, expiry >= 0)
 
     # Mask degenerate inputs before sqrt/division so the unused branch has no NaN gradient.
     degenerate = (expiry <= 0) | (vol <= 0)
@@ -65,9 +63,8 @@ def price(
     )
     d2 = d1 - safe_vol * sqrt_t
 
-    inv_sqrt2 = 1.0 / math.sqrt(2.0)
-    nd1 = 0.5 * (1.0 + torch.erf(d1 * inv_sqrt2))
-    nd2 = 0.5 * (1.0 + torch.erf(d2 * inv_sqrt2))
+    nd1 = normal_cdf(d1)
+    nd2 = normal_cdf(d2)
 
     expiry_or_zero = torch.clamp(expiry, min=0.0)
     discounted_spot = spot * torch.exp(-div * expiry_or_zero)
@@ -99,7 +96,7 @@ def step(
     exact transition, which is what QuantLib's Black-Scholes process applies
     on each grid interval.
     """
-    spot, times, normals, rate, vol, div = _as_tensors(spot, times, normals, rate, vol, div)
+    spot, times, normals, rate, vol, div = align(spot, times, normals, rate, vol, div)
     num_paths, num_steps, dim = normals.shape
     interval = (times[1:] - times[:-1]).reshape(1, num_steps, 1)
     wiener = torch.cumsum(normals * torch.sqrt(interval), dim=1)
@@ -108,3 +105,27 @@ def step(
     future = spot * torch.exp(exponent)
     initial = torch.broadcast_to(spot, (num_paths, 1, dim)).clone()
     return torch.cat((initial, future), dim=1)
+
+
+def likelihood_weight(
+    *,
+    normals: torch.Tensor,
+    times: torch.Tensor,
+    spot: torch.Tensor,
+    vol: torch.Tensor,
+) -> torch.Tensor:
+    """Likelihood-ratio weight whose derivative is the Black-Scholes score.
+
+    The weight equals one at the current spot and volatility, so a Monte Carlo
+    price is unchanged. Autograd through the weight is the likelihood-ratio
+    delta and vega (Glasserman 2004). ``normals`` are Wiener increments of
+    shape ``[num_paths, num_steps, dim]``.
+    """
+    spot, vol, times = align(spot, vol, times)
+    interval = times[1:] - times[:-1]
+    elapsed = times[-1] - times[0]
+    terminal = (normals[..., 0] * torch.sqrt(interval)).sum(dim=-1)
+    z = terminal / torch.sqrt(elapsed)
+    score_spot = z / (spot * vol * torch.sqrt(elapsed))
+    score_vol = (z * z - 1.0) / vol - z * torch.sqrt(elapsed)
+    return 1.0 + score_spot * (spot - spot.detach()) + score_vol * (vol - vol.detach())

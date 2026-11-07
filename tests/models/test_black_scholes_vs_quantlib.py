@@ -12,6 +12,10 @@ pytestmark = pytest.mark.quantlib
 REL = 1e-9
 ABS = 1e-10
 
+
+def _t(value):
+    return torch.tensor(value, dtype=torch.float64)
+
 # (spot, strike, days, rate, vol)
 CASES = {
     "atm_1y": (100.0, 100.0, 365, 0.05, 0.20),
@@ -120,17 +124,17 @@ def test_batch_matches_quantlib():
             ), (name, i)
 
 
-def test_python_floats_default_to_float64():
-    value = price(
-        spot=100.0,
-        strike=100.0,
-        expiry=1.0,
-        rate=0.05,
-        vol=0.2,
-        div=0.0,
-        is_call=torch.tensor(True),
-    )
-    assert value.dtype == torch.float64
+def test_python_floats_are_rejected():
+    with pytest.raises(TypeError):
+        price(
+            spot=100.0,
+            strike=100.0,
+            expiry=1.0,
+            rate=0.05,
+            vol=0.2,
+            div=0.0,
+            is_call=torch.tensor(True),
+        )
 
 
 @pytest.mark.parametrize("is_call", [True, False], ids=["call", "put"])
@@ -141,11 +145,11 @@ def test_zero_expiry_is_intrinsic_with_finite_gradients(spot, is_call):
     sigma = torch.tensor(0.2, dtype=torch.float64, requires_grad=True)
     value = price(
         spot=S,
-        strike=100.0,
+        strike=torch.tensor(100.0, dtype=torch.float64),
         expiry=T,
-        rate=0.05,
+        rate=torch.tensor(0.05, dtype=torch.float64),
         vol=sigma,
-        div=0.0,
+        div=torch.tensor(0.0, dtype=torch.float64),
         is_call=torch.tensor(is_call),
     )
 
@@ -161,11 +165,11 @@ def test_zero_vol_is_discounted_forward_intrinsic(is_call):
     sigma = torch.tensor(0.0, dtype=torch.float64, requires_grad=True)
     value = price(
         spot=S,
-        strike=100.0,
-        expiry=1.0,
-        rate=0.05,
+        strike=torch.tensor(100.0, dtype=torch.float64),
+        expiry=torch.tensor(1.0, dtype=torch.float64),
+        rate=torch.tensor(0.05, dtype=torch.float64),
         vol=sigma,
-        div=0.02,
+        div=torch.tensor(0.02, dtype=torch.float64),
         is_call=torch.tensor(is_call),
     )
 
@@ -181,9 +185,9 @@ def test_zero_vol_is_discounted_forward_intrinsic(is_call):
 def test_short_expiry_converges_to_intrinsic():
     call = torch.tensor(True)
     near = price(
-        spot=120.0, strike=100.0, expiry=1e-12, rate=0.05, vol=0.2, div=0.0, is_call=call
+        spot=_t(120.0), strike=_t(100.0), expiry=_t(1e-12), rate=_t(0.05), vol=_t(0.2), div=_t(0.0), is_call=call
     )
     at = price(
-        spot=120.0, strike=100.0, expiry=0.0, rate=0.05, vol=0.2, div=0.0, is_call=call
+        spot=_t(120.0), strike=_t(100.0), expiry=_t(0.0), rate=_t(0.05), vol=_t(0.2), div=_t(0.0), is_call=call
     )
     assert near.item() == pytest.approx(at.item(), abs=1e-9)

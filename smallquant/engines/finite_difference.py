@@ -23,6 +23,10 @@ def price(
     theta: float = 0.5,
     rannacher_steps: int = 2,
     grid_scale: float = 6.0,
+    barrier: torch.Tensor | None = None,
+    barrier_kind: str | None = None,
+    rebate: torch.Tensor | None = None,
+    local_vol=None,
 ) -> torch.Tensor:
     """Crank-Nicolson price on a log-spot grid concentrated at the strike.
 
@@ -37,6 +41,26 @@ def price(
     """
     if exercise not in ("european", "american"):
         raise ValueError("exercise must be 'european' or 'american'")
+    if barrier is not None or local_vol is not None:
+        return _with_barrier_or_local_vol(
+            spot=spot,
+            strike=strike,
+            expiry=expiry,
+            rate=rate,
+            vol=vol,
+            div=div,
+            is_call=is_call,
+            exercise=exercise,
+            num_space=num_space,
+            num_time=num_time,
+            theta=theta,
+            rannacher_steps=rannacher_steps,
+            grid_scale=grid_scale,
+            barrier=barrier,
+            barrier_kind=barrier_kind,
+            rebate=rebate,
+            local_vol=local_vol,
+        )
     if num_space < 8 or num_time < 1:
         raise ValueError("num_space must be at least 8 and num_time at least 1")
     if not 0.0 <= theta <= 1.0:
@@ -177,3 +201,118 @@ def _spline(nodes, values, query):
         * span**2
         / 6.0
     )
+
+
+def _with_barrier_or_local_vol(
+    *,
+    spot,
+    strike,
+    expiry,
+    rate,
+    vol,
+    div,
+    is_call,
+    exercise,
+    num_space,
+    num_time,
+    theta,
+    rannacher_steps,
+    grid_scale,
+    barrier,
+    barrier_kind,
+    rebate,
+    local_vol,
+):
+    """Crank-Nicolson with a Dirichlet barrier and an optional local volatility."""
+    spot, strike, expiry, rate, vol, div = as_tensors(spot, strike, expiry, rate, vol, div)
+    kind = None if barrier_kind is None else barrier_kind.replace("_and_", "_")
+    knock_in = kind in ("down_in", "up_in")
+    if knock_in:
+        vanilla = price(
+            spot=spot,
+            strike=strike,
+            expiry=expiry,
+            rate=rate,
+            vol=vol,
+            div=div,
+            is_call=is_call,
+            exercise=exercise,
+            num_space=num_space,
+            num_time=num_time,
+            theta=theta,
+            rannacher_steps=rannacher_steps,
+            grid_scale=grid_scale,
+            local_vol=local_vol,
+        )
+        knocked_out = _with_barrier_or_local_vol(
+            spot=spot,
+            strike=strike,
+            expiry=expiry,
+            rate=rate,
+            vol=vol,
+            div=div,
+            is_call=is_call,
+            exercise=exercise,
+            num_space=num_space,
+            num_time=num_time,
+            theta=theta,
+            rannacher_steps=rannacher_steps,
+            grid_scale=grid_scale,
+            barrier=barrier,
+            barrier_kind="down_out" if kind == "down_in" else "up_out",
+            rebate=rebate,
+            local_vol=local_vol,
+        )
+        return vanilla - knocked_out
+    batch_shape = torch.broadcast_shapes(spot.shape, strike.shape, expiry.shape, rate.shape, vol.shape, div.shape)
+    spot, strike, expiry, rate, vol, div = (tensor.expand(batch_shape).reshape(-1) for tensor in (spot, strike, expiry, rate, vol, div))
+    is_call = is_call.expand(batch_shape).reshape(-1)
+    safe_expiry = torch.where(expiry <= 0, torch.ones_like(expiry), expiry)
+    log_spot = _log_grid(strike, spot.detach(), safe_expiry, vol, num_space, grid_scale)
+    spots = torch.exp(log_spot)
+    payoff = torch.where(is_call[:, None], torch.relu(spots - strike[:, None]), torch.relu(strike[:, None] - spots))
+    cash = torch.zeros_like(spot) if rebate is None else as_tensors(rebate)[0].expand_as(spot)
+    values = payoff
+    step = safe_expiry[:, None] / num_time
+    for index in range(num_time):
+        remaining = step * (index + 1)
+        if local_vol is None:
+            lower, diag, upper = _spatial(log_spot, rate, vol, div)
+        else:
+            elapsed = safe_expiry - remaining[:, 0]
+            node_vol = local_vol(spots, elapsed)
+            lower, diag, upper = _spatial_nodes(log_spot, rate, node_vol, div)
+        step_theta = 1.0 if index < rannacher_steps else theta
+        boundary = _boundary(log_spot, strike, rate, div, remaining, is_call, exercise)
+        values = _theta_step(values, lower, diag, upper, step, step_theta, boundary)
+        if barrier is not None:
+            level = as_tensors(barrier, spot)[0]
+            if kind == "down_out":
+                values = torch.where(spots < level, cash[:, None], values)
+            elif kind == "up_out":
+                values = torch.where(spots > level, cash[:, None], values)
+        if exercise == "american":
+            values = torch.maximum(values, payoff)
+    solved = _spline(log_spot, values, torch.log(spot))
+    intrinsic = torch.where(is_call, torch.relu(spot - strike), torch.relu(strike - spot))
+    return torch.where(expiry <= 0, intrinsic, solved).reshape(batch_shape)
+
+
+def _spatial_nodes(log_spot, rate, vol_nodes, div):
+    vol = vol_nodes[:, 1:-1]
+    drift = rate[:, None] - div[:, None] - 0.5 * vol * vol
+    diffusion = 0.5 * vol * vol
+    spacing = log_spot[:, 1:] - log_spot[:, :-1]
+    left = spacing[:, :-1]
+    right = spacing[:, 1:]
+    denom = left * right * (left + right)
+    first_left = -(right * right) / denom
+    first_mid = (right * right - left * left) / denom
+    first_right = (left * left) / denom
+    second_left = 2.0 * right / denom
+    second_mid = -2.0 * (left + right) / denom
+    second_right = 2.0 * left / denom
+    lower = drift * first_left + diffusion * second_left
+    diag = drift * first_mid + diffusion * second_mid - rate[:, None]
+    upper = drift * first_right + diffusion * second_right
+    return lower, diag, upper

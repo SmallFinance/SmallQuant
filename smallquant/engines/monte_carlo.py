@@ -29,6 +29,9 @@ def price(
     return_stderr: bool = False,
     control: Payoff | None = None,
     control_price: torch.Tensor | None = None,
+    moment_match: bool = False,
+    greeks_method: str = "pathwise",
+    score: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """Discounted Monte Carlo price.
 
@@ -61,18 +64,29 @@ def price(
         device=times.device,
         antithetic=antithetic,
     )
+    if moment_match:
+        centered = normals - normals.mean(dim=0, keepdim=True)
+        normals = centered / centered.std(dim=0, unbiased=False, keepdim=True).clamp(min=1e-8)
     if brownian_bridge:
         normals = apply_brownian_bridge(normals, times)
+    if greeks_method not in ("pathwise", "likelihood_ratio"):
+        raise ValueError("greeks_method must be 'pathwise' or 'likelihood_ratio'")
+    if greeks_method == "likelihood_ratio" and score is None:
+        raise ValueError("likelihood_ratio requires score(normals)")
     discount = torch.as_tensor(discount, dtype=times.dtype, device=times.device)
 
     values: list[torch.Tensor] = []
     controls: list[torch.Tensor] = []
     block = num_paths if chunk_size is None else chunk_size
     for start in range(0, num_paths, block):
-        paths = step(normals[start : start + block])
+        draw = normals[start : start + block]
+        paths = step(draw)
         if paths.ndim != 3 or paths.shape[0] != min(block, num_paths - start) or paths.shape[1] != steps + 1:
             raise ValueError("step must return [num_paths, num_steps + 1, dim]")
-        values.append(payoff(paths, times))
+        if greeks_method == "likelihood_ratio":
+            values.append(payoff(paths.detach(), times).detach() * score(draw))
+        else:
+            values.append(payoff(paths, times))
         if control is not None:
             controls.append(control(paths, times))
     sampled = torch.cat(values, dim=0) * discount

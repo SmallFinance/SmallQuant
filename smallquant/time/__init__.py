@@ -3,6 +3,7 @@
 from .calendar import BusinessDayConvention, Calendar, JointCalendarRule, WesternCalendar
 from .calendars import (
     TARGET,
+    Australia,
     BespokeCalendar,
     Japan,
     JointCalendar,
@@ -18,12 +19,14 @@ from .daycounter import (
     Actual365Fixed,
     Actual366,
     ActualActual,
+    Business252,
     DayCounter,
     OneDayCounter,
     SimpleDayCounter,
     Thirty360,
 )
 from .period import Frequency, Period, TimeUnit
+from .schedule import DateGeneration, Schedule
 
 __all__ = [
     "Actual360",
@@ -31,10 +34,13 @@ __all__ = [
     "Actual365Fixed",
     "Actual366",
     "ActualActual",
+    "Australia",
     "BespokeCalendar",
+    "Business252",
     "BusinessDayConvention",
     "Calendar",
     "Date",
+    "DateGeneration",
     "DayCounter",
     "Frequency",
     "Japan",
@@ -44,6 +50,7 @@ __all__ = [
     "NullCalendar",
     "OneDayCounter",
     "Period",
+    "Schedule",
     "SimpleDayCounter",
     "TARGET",
     "Thirty360",

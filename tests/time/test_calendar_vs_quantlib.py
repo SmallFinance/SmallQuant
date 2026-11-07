@@ -10,6 +10,7 @@ from smallquant.time import (
     BespokeCalendar,
     BusinessDayConvention,
     Date,
+    Australia,
     Japan,
     JointCalendar,
     JointCalendarRule,
@@ -86,6 +87,8 @@ CALENDARS = {
         ql.UnitedKingdom(ql.UnitedKingdom.Metals),
     ),
     "japan": (Japan(), ql.Japan()),
+    "australia": (Australia(), ql.Australia()),
+    "australia_asx": (Australia(Australia.Market.ASX), ql.Australia(ql.Australia.ASX)),
     "joint": (
         JointCalendar(TARGET(), UnitedKingdom()),
         ql.JointCalendar(ql.TARGET(), ql.UnitedKingdom()),

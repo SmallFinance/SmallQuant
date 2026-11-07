@@ -18,14 +18,21 @@ def price(
     div1: torch.Tensor,
     div2: torch.Tensor,
     correlation: torch.Tensor,
-    quantity1: torch.Tensor | float = 1.0,
-    quantity2: torch.Tensor | float = 1.0,
+    quantity1: torch.Tensor | None = None,
+    quantity2: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """European option to exchange ``quantity2`` of asset 2 for ``quantity1`` of asset 1."""
-    spot1, spot2, expiry, rate, vol1, vol2, div1, div2, correlation, quantity1, quantity2 = (
-        as_tensors(
-            spot1, spot2, expiry, rate, vol1, vol2, div1, div2, correlation, quantity1, quantity2
-        )
+    """European option to exchange ``quantity2`` of asset 2 for ``quantity1`` of asset 1.
+
+    Omitted quantities are one. An explicit quantity must be a tensor.
+    """
+    spot1, spot2, expiry, rate, vol1, vol2, div1, div2, correlation = as_tensors(
+        spot1, spot2, expiry, rate, vol1, vol2, div1, div2, correlation
+    )
+    quantity1 = (
+        torch.ones_like(spot1) if quantity1 is None else as_tensors(quantity1, dtype=spot1.dtype)[0]
+    )
+    quantity2 = (
+        torch.ones_like(spot2) if quantity2 is None else as_tensors(quantity2, dtype=spot2.dtype)[0]
     )
     df = torch.exp(-rate * expiry)
     forward1 = spot1 * torch.exp((rate - div1) * expiry)

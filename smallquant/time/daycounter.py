@@ -4,7 +4,7 @@ Each counter provides `day_count(d1, d2)` (integer days under the convention) an
 `year_fraction(d1, d2, ref_start=None, ref_end=None)`. The reference period is only used by
 conventions that need a coupon period (Actual/Actual ISMA, Actual/365 Canadian).
 
-Not ported: Business/252 and Actual/Actual ISMA driven by a `Schedule`.
+Actual/Actual ISMA accepts a ``schedule``. ``Business252`` divides business days by 252.
 """
 
 from __future__ import annotations
@@ -271,12 +271,33 @@ class ActualActual(DayCounter):
     def name(self) -> str:
         return f"Actual/Actual ({self._kind})"
 
-    def year_fraction(self, d1, d2, ref_start=None, ref_end=None) -> float:
+    def year_fraction(self, d1, d2, ref_start=None, ref_end=None, schedule=None) -> float:
+        if schedule is not None:
+            if self._kind != "ISMA":
+                raise ValueError("a schedule is only used by Actual/Actual ISMA")
+            return self._isma_schedule(d1, d2, schedule)
         if self._kind == "ISDA":
             return self._isda(d1, d2)
         if self._kind == "AFB":
             return self._afb(d1, d2)
         return self._isma(d1, d2, ref_start, ref_end)
+
+    def _isma_schedule(self, d1: Date, d2: Date, schedule) -> float:
+        """ISMA year fraction driven by the coupon periods of ``schedule``."""
+        if d1 == d2:
+            return 0.0
+        if d2 < d1:
+            return -self._isma_schedule(d2, d1, schedule)
+        dates = schedule.quasi_payment_dates()
+        if d1 < dates[0] or d2 > dates[-1]:
+            raise ValueError("dates are outside the schedule")
+        total = 0.0
+        for start, end in zip(dates, dates[1:]):
+            if d1 < end and d2 > start:
+                left = d1 if d1 > start else start
+                right = d2 if d2 < end else end
+                total += _reference_fraction(left, right, start, end)
+        return total
 
     @staticmethod
     def _isda(d1: Date, d2: Date) -> float:
@@ -364,6 +385,34 @@ class ActualActual(DayCounter):
             total += period
             i += 1
         return total + self._isma(new_start, d2, new_start, new_end)
+
+
+def _reference_fraction(d1: Date, d2: Date, ref_start: Date, ref_end: Date) -> float:
+    reference = ref_end - ref_start
+    if reference < 16:
+        coupons = 1
+        reference = (d1 + Period(1, TimeUnit.Years)) - d1
+    else:
+        months = _lround(12 * reference / 365.0)
+        coupons = _lround(12.0 / months) if months else 1
+    return (d2 - d1) / (reference * coupons)
+
+
+class Business252(DayCounter):
+    """Business/252: business days in the calendar divided by 252."""
+
+    def __init__(self, calendar):
+        self.calendar = calendar
+
+    @property
+    def name(self) -> str:
+        return f"Business/252({self.calendar.name})"
+
+    def day_count(self, d1: Date, d2: Date) -> int:
+        return self.calendar.business_days_between(d1, d2)
+
+    def year_fraction(self, d1, d2, ref_start=None, ref_end=None) -> float:
+        return self.day_count(d1, d2) / 252.0
 
 
 class SimpleDayCounter(DayCounter):
