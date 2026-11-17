@@ -1,13 +1,11 @@
-"""Vanilla Black-Scholes calls/puts against QuantLib's AnalyticEuropeanEngine."""
-
 import pytest
 import torch
-
 from smallquant.black_scholes.vanilla_prices import option_price as price
 
 ql = pytest.importorskip("tests.reference.ql")
+tff = pytest.importorskip("tests.reference.tff")
 
-pytestmark = pytest.mark.quantlib
+pytestmark = [pytest.mark.quantlib, pytest.mark.tfquant]
 
 REL = 1e-9
 ABS = 1e-10
@@ -62,41 +60,51 @@ def price_and_greeks(spot, strike, days, rate, vol, div=0.0, is_call=True):
     }
 
 
+def _assert_matches(ours, ref, source):
+    for name, value in ours.items():
+        expected = getattr(ref, name)
+        if value.ndim == 0:
+            assert value.item() == pytest.approx(expected, rel=REL, abs=ABS), (source, name)
+        else:
+            torch.testing.assert_close(
+                value,
+                torch.as_tensor(expected, dtype=value.dtype),
+                rtol=REL,
+                atol=ABS,
+            )
+
+
+def _assert_both(ours, **kwargs):
+    for source, refmod in (("QuantLib", ql), ("TF Quant Finance", tff)):
+        _assert_matches(ours, refmod.european(**kwargs), source)
+
+
 @pytest.mark.parametrize("case", CASES.values(), ids=CASES.keys())
 def test_matches_quantlib(case):
     spot, strike, days, rate, vol = case
     ours = price_and_greeks(spot, strike, days, rate, vol)
-    ref = ql.european(spot=spot, strike=strike, days=days, rate=rate, vol=vol)
-
-    for name, value in ours.items():
-        assert value.item() == pytest.approx(getattr(ref, name), rel=REL, abs=ABS), name
+    _assert_both(ours, spot=spot, strike=strike, days=days, rate=rate, vol=vol)
 
 
 @pytest.mark.parametrize("case", CASES.values(), ids=CASES.keys())
 def test_put_matches_quantlib(case):
     spot, strike, days, rate, vol = case
     ours = price_and_greeks(spot, strike, days, rate, vol, is_call=False)
-    ref = ql.european(
-        spot=spot, strike=strike, days=days, rate=rate, vol=vol, is_call=False
-    )
-
-    for name, value in ours.items():
-        assert value.item() == pytest.approx(getattr(ref, name), rel=REL, abs=ABS), name
+    _assert_both(ours, spot=spot, strike=strike, days=days, rate=rate, vol=vol, is_call=False)
 
 
 def test_dividend_yield_matches_quantlib():
     ours = price_and_greeks(100.0, 100.0, 365, 0.05, 0.20, div=0.03)
-    ref = ql.european(spot=100.0, strike=100.0, days=365, rate=0.05, vol=0.20, div=0.03)
-    for name, value in ours.items():
-        assert value.item() == pytest.approx(getattr(ref, name), rel=REL, abs=ABS), name
+    _assert_both(ours, spot=100.0, strike=100.0, days=365, rate=0.05, vol=0.20, div=0.03)
 
 
 def test_textbook_value():
     # Hull, Options, Futures, and Other Derivatives: S=K=100, T=1, r=5%, vol=20%.
     ours = price_and_greeks(100.0, 100.0, 365, 0.05, 0.20)["price"].item()
-    ref = ql.european(spot=100.0, strike=100.0, days=365, rate=0.05, vol=0.20).price
     assert ours == pytest.approx(10.4506, abs=5e-5)
-    assert ref == pytest.approx(10.4506, abs=5e-5)
+    for refmod in (ql, tff):
+        ref = refmod.european(spot=100.0, strike=100.0, days=365, rate=0.05, vol=0.20).price
+        assert ref == pytest.approx(10.4506, abs=5e-5)
 
 
 def test_batch_matches_quantlib():
@@ -122,6 +130,18 @@ def test_batch_matches_quantlib():
             assert values[i].item() == pytest.approx(
                 getattr(ref, name), rel=REL, abs=ABS
             ), (name, i)
+
+    _assert_matches(
+        ours,
+        tff.european(
+            spot=spot.detach().numpy(),
+            strike=strike.detach().numpy(),
+            days=days.detach().numpy(),
+            rate=rate.detach().numpy(),
+            vol=vol.detach().numpy(),
+        ),
+        "TF Quant Finance",
+    )
 
 
 def test_python_floats_are_rejected():
@@ -222,7 +242,9 @@ def test_binary_and_asset_or_nothing_match_quantlib(case, is_call, payoff_kind):
 
     spot, strike, days, rate, vol = CASES[case]
     div = 0.02
-    expected = _ql_digital(payoff_kind, spot=spot, strike=strike, days=days, rate=rate, vol=vol, div=div, is_call=is_call)
+    kwargs = dict(spot=spot, strike=strike, days=days, rate=rate, vol=vol, div=div, is_call=is_call)
+    expected = _ql_digital(payoff_kind, **kwargs)
+    tff_price = (tff.binary if payoff_kind == "cash" else tff.asset_or_nothing)(**kwargs)
     pricer = binary_price if payoff_kind == "cash" else asset_or_nothing_price
     by_spot = pricer(
         spot=_t(spot), strike=_t(strike), expiry=_t(days / 365.0), rate=_t(rate), div=_t(div), vol=_t(vol), is_call=is_call
@@ -235,6 +257,8 @@ def test_binary_and_asset_or_nothing_match_quantlib(case, is_call, payoff_kind):
     )
     assert float(by_spot) == pytest.approx(expected, rel=REL, abs=ABS)
     assert float(by_forward) == pytest.approx(expected, rel=REL, abs=ABS)
+    assert float(by_spot) == pytest.approx(tff_price, rel=REL, abs=ABS)
+    assert float(by_forward) == pytest.approx(tff_price, rel=REL, abs=ABS)
 
 
 def test_cash_and_asset_digitals_rebuild_the_vanilla():

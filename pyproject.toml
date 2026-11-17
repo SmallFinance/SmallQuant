@@ -18,6 +18,9 @@ test = [
     "numpy>=2.2.6",
     "pytest",
     "QuantLib",
+    "tensorflow>=2.21.0",
+    "tf-keras>=2.21.0",
+    "tf-quant-finance>=0.0.1.dev34",
 ]
 
 [tool.uv]
@@ -26,4 +29,7 @@ default-groups = ["test"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-markers = ["quantlib: compares against QuantLib reference values"]
+markers = [
+    "quantlib: compares against QuantLib reference values",
+    "tfquant: compares against TF Quant Finance reference values",
+]
