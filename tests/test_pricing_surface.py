@@ -56,7 +56,7 @@ def test_package_surface():
 
 def test_dtype_promotion_and_rejection():
     with pytest.raises(TypeError):
-        sq.models.black_scholes.price(
+        sq.black_scholes.option_price(
             spot=1.0,
             strike=_t(1.0),
             expiry=_t(1.0),
@@ -65,7 +65,7 @@ def test_dtype_promotion_and_rejection():
             div=_t(0.0),
             is_call=torch.tensor(True),
         )
-    mixed = sq.models.black_scholes.price(
+    mixed = sq.black_scholes.option_price(
         spot=torch.tensor(100.0, dtype=torch.float32),
         strike=_t(100.0),
         expiry=_t(1.0),
@@ -76,7 +76,7 @@ def test_dtype_promotion_and_rejection():
     )
     assert mixed.dtype == torch.float64
     with pytest.raises(ValueError):
-        sq.models.black_scholes.price(
+        sq.black_scholes.option_price(
             spot=torch.tensor(100.0, device="cpu"),
             strike=torch.tensor(100.0, device="meta"),
             expiry=_t(1.0),
@@ -90,7 +90,7 @@ def test_dtype_promotion_and_rejection():
 def test_validation_names_the_argument():
     with sq.validation(True):
         with pytest.raises(ValueError, match="vol"):
-            sq.models.black_scholes.price(
+            sq.black_scholes.option_price(
                 spot=_t(100.0),
                 strike=_t(100.0),
                 expiry=_t(1.0),
@@ -105,21 +105,21 @@ def test_implied_vol_round_trip_and_vega():
     spot, strike, expiry, rate, div = _t(100.0), _t(100.0), _t(1.0), _t(0.03), _t(0.01)
     vol = _t(0.2)
     flag = torch.tensor(True)
-    value = sq.models.black_scholes.price(
+    value = sq.black_scholes.option_price(
         spot=spot, strike=strike, expiry=expiry, rate=rate, vol=vol, div=div, is_call=flag
     )
     price = value.detach().requires_grad_(True)
-    solved = sq.vol.implied_vol(price, spot=spot, strike=strike, expiry=expiry, rate=rate, div=div, is_call=flag)
+    solved = sq.black_scholes.implied_vol(price, spot=spot, strike=strike, expiry=expiry, rate=rate, div=div, is_call=flag)
     assert float(solved.detach()) == pytest.approx(0.2, rel=1e-8, abs=1e-8)
     (grad,) = torch.autograd.grad(solved, price)
     spot_g = spot.detach().requires_grad_(True)
-    model = sq.models.black_scholes.price(
+    model = sq.black_scholes.option_price(
         spot=spot_g, strike=strike, expiry=expiry, rate=rate, vol=solved.detach(), div=div, is_call=flag
     )
     (vega,) = torch.autograd.grad(model, spot_g)
     # Vega here is delta. Recompute vega from the solved volatility.
     vol_g = solved.detach().requires_grad_(True)
-    model = sq.models.black_scholes.price(
+    model = sq.black_scholes.option_price(
         spot=spot, strike=strike, expiry=expiry, rate=rate, vol=vol_g, div=div, is_call=flag
     )
     (vega,) = torch.autograd.grad(model, vol_g)
@@ -139,7 +139,7 @@ def test_greeks_match_autograd():
     }
 
     def black(data):
-        return sq.models.black_scholes.price(
+        return sq.black_scholes.option_price(
             spot=data["spot"],
             strike=data["strike"],
             expiry=data["expiry"],
@@ -181,7 +181,7 @@ def test_greeks_match_autograd():
 def test_engines_agree_on_a_european_call():
     spot, strike, expiry, rate, vol, div = _t(100.0), _t(100.0), _t(1.0), _t(0.05), _t(0.2), _t(0.0)
     flag = torch.tensor(True)
-    closed = sq.models.black_scholes.price(
+    closed = sq.black_scholes.option_price(
         spot=spot, strike=strike, expiry=expiry, rate=rate, vol=vol, div=div, is_call=flag
     )
     market = Market(spot=spot, rate=rate, div=div)
@@ -199,7 +199,7 @@ def test_engines_agree_on_a_european_call():
 
 def test_sabr_atm_is_finite():
     forward = _t(100.0).requires_grad_()
-    vol = sq.models.sabr.implied_vol(
+    vol = sq.models.sabr.approximations.implied_vol(
         forward=forward,
         strike=forward.detach(),
         expiry=_t(1.0),
@@ -234,7 +234,7 @@ def test_merton_with_no_jumps_matches_black_scholes():
         div=_t(0.0),
         is_call=torch.tensor(True),
     )
-    plain = sq.models.black_scholes.price(**kwargs)
+    plain = sq.black_scholes.option_price(**kwargs)
     jumped = sq.models.merton.price(
         **kwargs, jump_intensity=_t(0.0), jump_mean=_t(0.0), jump_vol=_t(0.1), num_terms=4
     )
@@ -338,7 +338,7 @@ def test_dupire_recovers_flat_volatility():
     spot, rate, div, vol = _t(100.0), _t(0.01), _t(0.0), _t(0.2)
 
     def calls(strike, expiry):
-        return sq.models.black_scholes.price(
+        return sq.black_scholes.option_price(
             spot=spot, strike=strike, expiry=expiry, rate=rate, vol=vol, div=div, is_call=torch.tensor(True)
         )
 
@@ -362,7 +362,7 @@ def test_american_put_lattice_and_pde_are_close():
     tree = Lattice(num_steps=300).price(option, params, market)
     pde = PDE(num_space=120, num_time=120).price(option, params, market)
     assert float(tree) == pytest.approx(float(pde), abs=0.08)
-    european = sq.models.black_scholes.price(
+    european = sq.black_scholes.option_price(
         spot=spot, strike=strike, expiry=expiry, rate=rate, vol=vol, div=div, is_call=flag
     )
     assert float(tree) > float(european)

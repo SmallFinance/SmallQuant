@@ -6,7 +6,7 @@ import torch
 import QuantLib as ql
 
 from smallquant.engines.finite_difference import price as fd_price
-from smallquant.models.black_scholes import price as bs_price
+from smallquant.black_scholes.vanilla_prices import option_price as bs_price
 
 pytestmark = pytest.mark.quantlib
 

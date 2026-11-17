@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from ._common import as_tensors
+from smallquant._tensor import align
 
 
 def _ncx2_cdf(x: torch.Tensor, df: torch.Tensor, noncentrality: torch.Tensor, terms: int = 80) -> torch.Tensor:
@@ -34,7 +34,7 @@ def price(
 
     The dynamics are ``dF = alpha F^beta dW``. ``discount`` is the zero bond to expiry.
     """
-    forward, strike, expiry, alpha, beta, discount = as_tensors(
+    forward, strike, expiry, alpha, beta, discount = align(
         forward, strike, expiry, alpha, beta, discount
     )
 

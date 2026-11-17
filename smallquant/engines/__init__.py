@@ -1,6 +1,6 @@
 """Numerical pricing engines."""
 
-from . import finite_difference, fourier, lattice, longstaff, monte_carlo
+from . import finite_difference, fourier, longstaff, monte_carlo
 from .pricing import Analytic, Fourier, Lattice, MonteCarlo, PDE
 
 __all__ = [
@@ -11,7 +11,6 @@ __all__ = [
     "PDE",
     "finite_difference",
     "fourier",
-    "lattice",
     "longstaff",
     "monte_carlo",
 ]

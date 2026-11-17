@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from . import finite_difference, fourier, lattice
+from . import finite_difference, fourier
 from .longstaff import discounted_exercise, exercise_index
 from .monte_carlo import price as monte_carlo_price
 from smallquant.instruments import (
@@ -15,7 +15,9 @@ from smallquant.instruments import (
     EuropeanOption,
 )
 from smallquant.market import Market
-from smallquant.models import bachelier, black76, black_scholes, heston, local_vol, merton, sabr
+from smallquant.black_scholes.crr_binomial_tree import option_price_binomial
+from smallquant.black_scholes.vanilla_prices import option_price
+from smallquant.models import geometric_brownian_motion, heston, local_vol, merton, sabr
 from smallquant.models.params import (
     BachelierParams,
     Black76Params,
@@ -56,13 +58,18 @@ def _div(market, expiry):
 
 
 class Analytic(_Engine):
-    """Closed-form and characteristic-function prices."""
+    """Closed-form and characteristic-function prices.
 
-    def __init__(self, num_terms: int = 128):
+    ``num_terms`` is the Merton jump series length; ``fourier_terms`` is the COS term
+    count for Heston.
+    """
+
+    def __init__(self, num_terms: int = 128, fourier_terms: int = 256):
         self.num_terms = num_terms
+        self.fourier_terms = fourier_terms
 
     def _european_black(self, instrument: EuropeanOption, params: BlackScholesParams, market: Market):
-        return black_scholes.price(
+        return option_price(
             spot=market.spot,
             strike=instrument.strike,
             expiry=instrument.expiry,
@@ -75,7 +82,7 @@ class Analytic(_Engine):
     def _european_black76(self, instrument: EuropeanOption, params: Black76Params, market: Market):
         expiry = instrument.expiry
         forward = market.spot * torch.exp((_rate(market, expiry) - _div(market, expiry)) * expiry)
-        return black76.price(
+        return option_price(
             forward=forward,
             strike=instrument.strike,
             expiry=expiry,
@@ -87,7 +94,7 @@ class Analytic(_Engine):
     def _european_bachelier(self, instrument: EuropeanOption, params: BachelierParams, market: Market):
         expiry = instrument.expiry
         forward = market.spot * torch.exp((_rate(market, expiry) - _div(market, expiry)) * expiry)
-        return bachelier.price(
+        return option_price(
             forward=forward,
             strike=instrument.strike,
             expiry=expiry,
@@ -132,7 +139,7 @@ class Analytic(_Engine):
                 rho=params.rho,
             ),
             method="cos",
-            num_terms=self.num_terms,
+            num_terms=self.fourier_terms,
         )
 
     def _european_sabr(self, instrument: EuropeanOption, params: SABRParams, market: Market):
@@ -140,21 +147,15 @@ class Analytic(_Engine):
         rate = _rate(market, expiry)
         div = _div(market, expiry)
         forward = market.spot * torch.exp((rate - div) * expiry)
-        vol = sabr.implied_vol(
+        return sabr.approximations.european_option_price(
             forward=forward,
             strike=instrument.strike,
             expiry=expiry,
+            discount=market.discount_at(expiry),
             alpha=params.alpha,
             beta=params.beta,
             rho=params.rho,
             nu=params.nu,
-        )
-        return black76.price(
-            forward=forward,
-            strike=instrument.strike,
-            expiry=expiry,
-            vol=vol,
-            discount=market.discount_at(expiry),
             is_call=instrument.is_call,
         )
 
@@ -209,13 +210,13 @@ class MonteCarlo(_Engine):
         div = _div(market, instrument.expiry)
 
         def step(normals):
-            return black_scholes.step(
+            return geometric_brownian_motion.step(
                 spot=market.spot, times=times, normals=normals, rate=rate, vol=params.vol, div=div
             )
 
         score = None
         if self.greeks_method == "likelihood_ratio":
-            score = lambda normals: black_scholes.likelihood_weight(
+            score = lambda normals: geometric_brownian_motion.likelihood_weight(
                 normals=normals, times=times, spot=market.spot, vol=params.vol
             )
         return monte_carlo_price(
@@ -239,7 +240,7 @@ class MonteCarlo(_Engine):
         div = _div(market, instrument.expiry)
 
         def step(normals):
-            return black_scholes.step(
+            return geometric_brownian_motion.step(
                 spot=market.spot, times=times, normals=normals, rate=rate, vol=params.vol, div=div
             )
 
@@ -396,7 +397,7 @@ PDE.registry = {
 
 
 class Fourier(_Engine):
-    def __init__(self, method: str = "cos", num_terms: int = 128):
+    def __init__(self, method: str = "cos", num_terms: int = 256):
         self.method = method
         self.num_terms = num_terms
 
@@ -458,7 +459,7 @@ class Lattice(_Engine):
 
     def _price(self, instrument, params, market, exercise):
         expiry = instrument.expiry
-        return lattice.price(
+        return option_price_binomial(
             spot=market.spot,
             strike=instrument.strike,
             expiry=expiry,

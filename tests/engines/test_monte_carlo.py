@@ -9,7 +9,8 @@ import QuantLib as ql
 
 from smallquant.engines.monte_carlo import price as mc_price
 from smallquant.math.random import brownian_bridge
-from smallquant.models import asian, bachelier, black_scholes
+from smallquant.black_scholes import asian_prices, option_price
+from smallquant.models import arithmetic_brownian_motion, geometric_brownian_motion
 from smallquant.payoffs import (
     arithmetic_average_price,
     cash_or_nothing,
@@ -76,7 +77,7 @@ def test_repeated_seed_and_chunks_match():
     call = torch.tensor(True)
 
     def step(normals):
-        return black_scholes.step(
+        return geometric_brownian_motion.step(
             spot=spot, times=times, normals=normals, rate=rate, vol=vol, div=div
         )
 
@@ -114,14 +115,14 @@ def test_european_black_scholes_within_stderr(is_call):
     flag = torch.tensor(is_call)
     estimate, stderr = mc_price(
         lambda paths, grid: european(paths, grid, strike=_t(strike), is_call=flag),
-        lambda normals: black_scholes.step(normals=normals, **market),
+        lambda normals: geometric_brownian_motion.step(normals=normals, **market),
         times=times,
         discount=torch.exp(-market["rate"] * times[-1]),
         num_paths=65536,
         seed=3,
         return_stderr=True,
     )
-    closed = black_scholes.price(
+    closed = option_price(
         spot=market["spot"],
         strike=_t(strike),
         expiry=times[-1],
@@ -141,7 +142,7 @@ def test_european_bachelier_within_stderr(is_call):
     flag = torch.tensor(is_call)
     estimate, stderr = mc_price(
         lambda paths, grid: european(paths, grid, strike=_t(strike), is_call=flag),
-        lambda normals: bachelier.step(
+        lambda normals: arithmetic_brownian_motion.step(
             forward=_t(forward), times=times, normals=normals, normal_vol=_t(normal_vol)
         ),
         times=times,
@@ -150,7 +151,7 @@ def test_european_bachelier_within_stderr(is_call):
         seed=5,
         return_stderr=True,
     )
-    closed = bachelier.price(
+    closed = option_price(
         forward=_t(forward),
         strike=_t(strike),
         expiry=_t(expiry),
@@ -169,14 +170,14 @@ def test_geometric_asian_within_stderr():
     market = dict(spot=_t(spot), times=times, rate=_t(rate), vol=_t(vol), div=_t(div))
     estimate, stderr = mc_price(
         lambda paths, grid: geometric_average_price(paths, grid, strike=_t(strike), is_call=flag),
-        lambda normals: black_scholes.step(normals=normals, **market),
+        lambda normals: geometric_brownian_motion.step(normals=normals, **market),
         times=times,
         discount=torch.exp(-market["rate"] * times[-1]),
         num_paths=65536,
         seed=9,
         return_stderr=True,
     )
-    closed = asian.discrete_price(
+    closed = asian_prices.discrete_price(
         spot=market["spot"],
         strike=_t(strike),
         expiry=times[-1],
@@ -195,7 +196,7 @@ def test_arithmetic_asian_matches_quantlib():
     times = _t([0.0, *[_year(day) for day in days]])
     flag = torch.tensor(True)
     market = dict(spot=_t(spot), times=times, rate=_t(rate), vol=_t(vol), div=_t(div))
-    known = asian.discrete_price(
+    known = asian_prices.discrete_price(
         spot=market["spot"],
         strike=_t(strike),
         expiry=times[-1],
@@ -207,7 +208,7 @@ def test_arithmetic_asian_matches_quantlib():
     )
     estimate, stderr = mc_price(
         lambda paths, grid: arithmetic_average_price(paths, grid, strike=_t(strike), is_call=flag),
-        lambda normals: black_scholes.step(normals=normals, **market),
+        lambda normals: geometric_brownian_motion.step(normals=normals, **market),
         times=times,
         discount=torch.exp(-market["rate"] * times[-1]),
         num_paths=65536,
@@ -251,7 +252,7 @@ def test_pathwise_delta_and_vega():
     flag = torch.tensor(True)
     estimate = mc_price(
         lambda paths, grid: european(paths, grid, strike=strike, is_call=flag),
-        lambda normals: black_scholes.step(
+        lambda normals: geometric_brownian_motion.step(
             spot=spot, times=times, normals=normals, rate=rate, vol=vol, div=div
         ),
         times=times,
@@ -263,7 +264,7 @@ def test_pathwise_delta_and_vega():
     delta, vega = torch.autograd.grad(estimate, (spot, vol))
     spot_ref = spot.detach().requires_grad_()
     vol_ref = vol.detach().requires_grad_()
-    closed_price = black_scholes.price(
+    closed_price = option_price(
         spot=spot_ref,
         strike=strike,
         expiry=times[-1],
@@ -285,7 +286,7 @@ def test_smoothed_digital_delta_is_not_zero():
     flag = torch.tensor(True)
 
     def step(normals):
-        return black_scholes.step(
+        return geometric_brownian_motion.step(
             spot=spot, times=times, normals=normals, rate=rate, vol=vol, div=div
         )
 

@@ -5,7 +5,8 @@
 Prepared for Ted Wong and SmallQuant contributors | 31 October 2026 | Version 1.0
 
 **Purpose:** turn the SmallQuant design documents and the code that exists today into a
-complete, tested, PyTorch-native derivatives pricing library. This document records the
+complete, tested, PyTorch-native derivatives pricing library with a supported JAX backend
+(PRD-08). This document records the
 final product decisions, current behaviour, production gaps, interface contracts, numerical
 requirements and acceptance criteria. It is a build baseline for estimation and
 implementation; the decision register identifies the matters that still need an owner's
@@ -34,6 +35,12 @@ since been fixed.
   `smallquant.dates` item and the QuantLib reference version (now 1.44) are updated.
 - TEN-01: public numeric arguments are `torch.Tensor` only (no raw Python `float`/`int` on
   the public surface). Code still coerces numbers today; alignment is outstanding.
+- LAY-01: the package layout now follows TF Quant Finance (section 3, "Package layout").
+  Black-Scholes pricing moved from `smallquant.models` to `smallquant.black_scholes`, whose
+  files mirror TF's `tf_quant_finance/black_scholes/` one for one; exotic closed forms moved
+  to `smallquant.exotics`; `models/` keeps model dynamics; Heston and SABR prices sit under
+  `models/<model>/approximations/`. Old paths such as `sq.models.black_scholes.price` and
+  `sq.vol.implied_vol` are removed, not aliased.
 
 ## Contents
 
@@ -111,8 +118,9 @@ precision.
 composable pieces. A payoff can be priced by an analytic formula, Monte Carlo, a PDE solver,
 Fourier inversion or a lattice wherever each applies.
 
-**PRD-04 Confirmed requirement.** The runtime dependency is PyTorch only. NumPy, QuantLib,
-pytest and SciPy are test-only.
+**PRD-04 Confirmed requirement.** The required runtime dependency is PyTorch only. JAX is an
+optional extra (`smallquant[jax]`, PRD-08); `import smallquant` never imports or requires
+it. NumPy, QuantLib, pytest and SciPy are test-only.
 
 **PRD-05 Scope boundary.** Not in scope: trade booking, trade stores, market-data
 connectors, a full QuantLib replacement, and machine-learning price models. Deep hedging and
@@ -126,12 +134,20 @@ fractions.
 calibration, risk teams running large GPU Monte Carlo jobs (XVA, VaR, scenario sweeps), and
 researchers combining classical pricing with ML in one PyTorch graph.
 
+**PRD-08 Confirmed requirement.** SmallQuant supports JAX. The public pricing functions,
+Greeks, implied volatility, engines and calibration are available on `jax.Array` inputs
+with the same names, arguments, shapes and results as on PyTorch. Greeks come from
+`jax.grad` and its compositions, compilation from `jax.jit`, and batching from broadcasting
+(with `jax.vmap` available to callers). PyTorch stays the reference implementation: a JAX
+result that disagrees with the PyTorch result beyond QA-02 tolerances is a defect in the JAX
+backend. How the backend is exposed and how code is shared between the two is decision D12.
+
 ## 3 Final decisions that must survive the build
 
 | Area | Final instruction |
 | --- | --- |
-| Framework | PyTorch only at runtime. No TensorFlow, JAX or NumPy code paths in `smallquant/`. |
-| Tensor inputs | Public numeric arguments are `torch.Tensor` only. No Python `float`/`int`, NumPy scalars/arrays, or other raw types on the public surface. |
+| Framework | PyTorch is the primary runtime and reference implementation. JAX is a supported backend, installed as an optional extra (PRD-08). No TensorFlow or NumPy code paths in `smallquant/`. |
+| Tensor inputs | Public numeric arguments are `torch.Tensor`, or `jax.Array` on the JAX backend. No Python `float`/`int`, NumPy scalars/arrays, or other raw types on the public surface. One backend per call; mixing raises (TEN-09). |
 | Default dtype | `float64`. MPS falls back to `float32` with a one-time warning. |
 | Batching | Every public function broadcasts its tensor inputs. No Python loops over batch elements. |
 | Device | Outputs live on the inputs' device. Mixed devices raise; nothing is copied silently. |
@@ -144,7 +160,8 @@ researchers combining classical pricing with ML in one PyTorch graph.
 | Time | Year fractions in the core. Rates continuously compounded unless a function says otherwise. |
 | Argument names | `spot`, `forward`, `strike`, `expiry`, `rate`, `div`, `vol`, `normal_vol`, `is_call`, `discount` (Appendix A). Keyword-only after the first few. |
 | API levels | Functional (plain functions on tensors) is primary; object level (instrument + params + engine) is a thin layer over it. |
-| Layering | Lower layers never import upper ones. `math/` knows no finance; `models/` knows no engines. |
+| Layering | Lower layers never import upper ones. `math/` knows no finance; `black_scholes/` knows no models, exotics or engines; `exotics/` and `models/` may use `black_scholes/` but know no engines. |
+| Package layout | Follows TF Quant Finance. `black_scholes/` has exactly TF's files: `vanilla_prices.py` (`option_price` for Black-Scholes, Black-76 and Bachelier; `binary_price`, `asset_or_nothing_price`, `barrier_price`), `asian_prices.py`, `brownian_bridge.py`, `variance_swaps.py`, `implied_vol_lib.py` / `implied_vol_newton_root.py` / `implied_vol_approximation.py` / `implied_vol_utils.py`, `crr_binomial_tree.py`, `approximations/american_option.py`. `exotics/`: one `*_prices.py` per exotic family (barriers, lookbacks, choosers, compounds, cliquets, quantos, two-asset and others). `models/`: dynamics only (`geometric_brownian_motion`, `arithmetic_brownian_motion`, `merton`, `cev`, `local_vol`, `hull_white`, `params`), with `heston/` and `sabr/` packages whose prices live in `approximations/`. |
 | Validation | Value checks (`vol > 0`) are off by default because they sync the GPU; shape/dtype/device checks are always on. |
 | Monte Carlo results | Always reported with a standard error in tests, examples and docs. |
 | Benchmarks | No performance number is quoted before it is measured and labelled with hardware and versions. |
@@ -171,6 +188,7 @@ lines). There are 197 tests, all comparing against QuantLib, all passing on CPU.
 | Tests | QuantLib comparisons on CPU, `float64` | Device and dtype parametrisation, `gradcheck`, no-arbitrage, cross-engine, compile tests |
 | Tooling | `uv` project with `package = false`; no CI, no linter config | Installable package, CI, `ruff`, release process (section 18) |
 | Benchmarks | None | `benchmarks/` scripts run on demand |
+| JAX backend | None | Every public function on `jax.Array` inputs, matching PyTorch results (PRD-08, TEN-09, AT-24) |
 
 Stale material to clean up, not to preserve:
 
@@ -197,6 +215,11 @@ and test it in CI alongside the latest release. `torch.func`, `torch.compile` an
 **ENV-04 Decision required.** Which CI hardware is available. CPU on Linux and macOS is the
 proposed default; CUDA and MPS runs need either self-hosted runners or a documented manual
 release check.
+
+**ENV-05 Build requirement.** The JAX backend runs on the devices JAX supports: CPU, CUDA
+GPUs and TPUs. Apple GPUs are not a supported JAX target; Mac users run JAX on CPU or use
+the PyTorch MPS path. State a minimum supported JAX version in the `jax` extra and test it
+in CI alongside the latest release (decision D13).
 
 ## 6 Tensor, dtype and device contract
 
@@ -237,6 +260,17 @@ fallback. It is private and may change, but every public function uses it.
 
 **TEN-08 Confirmed requirement.** Extra shape-defining dimensions are documented per
 function in a fixed position: paths, then time, then state dimension.
+
+**TEN-09 Confirmed requirement.** On the JAX backend, TEN-01 to TEN-08 apply with
+`jax.Array` in place of `torch.Tensor`: same broadcasting, dtype resolution, device rules
+and differentiability. A call takes one backend: mixing `torch.Tensor` and `jax.Array`
+inputs raises, and nothing is converted between frameworks silently. Outputs are arrays of
+the inputs' backend, on the inputs' device.
+
+**TEN-10 Build requirement.** JAX computes in `float32` unless `jax_enable_x64` is on. The
+JAX backend never silently drops to `float32` when TEN-02 resolves to `float64` (PRD-02); it
+raises a clear error telling the caller to enable x64. The library does not flip the global
+JAX setting itself.
 
 ## 7 Mathematical primitives
 
@@ -285,13 +319,31 @@ identities.
 Implement by masking `vol * sqrt(expiry)` to a safe value before the division and selecting
 the limit with `torch.where`, per TEN-06.
 
-**MOD-04 Confirmed requirement.** Add `black76.price(*, forward, strike, expiry, vol,
-discount=1.0, is_call=True)` and `bachelier.price(*, forward, strike, expiry, normal_vol,
-discount=1.0, is_call=True)`.
+**MOD-04 Confirmed requirement.** One entry point, as in TF Quant Finance:
+`sq.black_scholes.option_price(*, strike, expiry, is_call, vol=None, normal_vol=None,
+spot=None, forward=None, rate=None, div=None, discount=None)`. Pass exactly one of `vol`
+(lognormal) and `normal_vol` (Bachelier), and exactly one of `spot` (with `rate`, optional
+`div`) and `forward` (with `discount` or `rate`, no `div`). `spot` with `vol` is
+Black-Scholes-Merton (MOD-01 to MOD-03), `forward` with `vol` is Black-76, and `normal_vol`
+is Bachelier. Invalid combinations raise `ValueError`. These choices are Python `None`
+checks, never tests on tensor values.
 
-**MOD-05 Confirmed requirement.** Add `sabr.implied_vol(*, forward, strike, expiry, alpha,
-beta, rho, nu)` (Hagan 2002), `heston.characteristic_function(u, *, params, expiry, ...)`
-and `merton_jump.price(..., jump_intensity, jump_mean, jump_vol, num_terms=64)`.
+**MOD-07 Confirmed requirement.** `sq.black_scholes.binary_price` (cash-or-nothing, same
+inputs as `option_price`, lognormal or normal), `asset_or_nothing_price` (lognormal) and
+`barrier_price` (Merton and Reiner-Rubinstein single barriers) live in `vanilla_prices.py`.
+Exotic closed forms live in `sq.exotics.<family>_prices`.
+
+**MOD-08 Confirmed requirement.** `sq.black_scholes.approximations.adesi_whaley`
+(Barone-Adesi and Whaley 1987) and `bjerksund_stensland(version=1993 | 2002)` give fast,
+differentiable American prices. They match QuantLib's approximation engines and serve as a
+cross-check on the tree, PDE and Longstaff-Schwartz prices (AT-25). The critical-price
+solve differentiates by the implicit function theorem (GRK-08).
+
+**MOD-05 Confirmed requirement.** `sq.models.sabr.approximations.implied_vol(*, forward,
+strike, expiry, alpha, beta, rho, nu)` (Hagan 2002) and `european_option_price` (Black-76 at
+the SABR vol); `sq.models.heston.characteristic_function(u, ...)` and
+`sq.models.heston.approximations.european_option_price` (Attari 2004 single integral); and
+`sq.models.merton.price(..., jump_intensity, jump_mean, jump_vol, num_terms=64)`.
 
 **MOD-06 Confirmed requirement.** Parameter dataclasses `BlackScholesParams`,
 `HestonParams`, `SABRParams`, `LocalVolParams`, `HullWhiteParams` hold tensors and are
@@ -346,12 +398,17 @@ exactly, with no unrolled graph.
 
 ## 10 Implied volatility and surfaces
 
-**VOL-01 Confirmed requirement.** `implied_vol(price, *, spot, strike, expiry, rate,
-div=0.0, is_call=True)` and `implied_normal_vol(price, *, forward, strike, expiry,
-discount=1.0, is_call=True)` solve a whole chain in one call.
+**VOL-01 Confirmed requirement.** `sq.black_scholes.implied_vol(price, *, strike, expiry,
+is_call=True, spot=None, forward=None, rate=None, div=None, discount=None,
+underlying_distribution=ImpliedVolUnderlyingDistribution.LOGNORMAL,
+method=ImpliedVolMethod.NEWTON)` solves a whole chain in one call. Inputs follow
+`option_price` (MOD-04); `underlying_distribution=NORMAL` gives Bachelier volatility.
 
-**VOL-02 Confirmed requirement.** Method: rational initial guess, then Newton safeguarded by
-bisection, under the fixed-iteration masked loop of MTH-02.
+**VOL-02 Confirmed requirement.** `method=NEWTON` (default): rational initial guess, then
+Newton safeguarded by bisection, under the fixed-iteration masked loop of MTH-02.
+`method=FAST_APPROX`: the one-shot Polya-approximation formula of Stefanica and Radoicic
+(2017), no iterations, lognormal only, for very large chains or as a starting point. Both
+are also callable directly as `implied_vol_newton` and `implied_vol_approx`.
 
 **VOL-03 Build requirement.** Prices outside no-arbitrage bounds (below intrinsic, above the
 discounted underlying) return NaN for those elements. Prices at intrinsic return zero vol.
@@ -360,6 +417,8 @@ The behaviour is documented and tested, not left to the solver.
 **VOL-04 Decision required.** Initial guess for Black implied vol: Jäckel's "Let's Be
 Rational" gives machine precision in two iterations but is substantially more code; a
 Brenner-Subrahmanyam or Corrado-Miller guess is simpler and needs more Newton steps.
+Newton currently starts from Brenner-Subrahmanyam; the `FAST_APPROX` formula (VOL-02) is a
+third candidate starting point.
 
 **VOL-05 Confirmed requirement.** `SVI(a, b, rho, m, sigma)` slices, `SSVI(theta_curve, rho,
 phi)` surfaces and `dupire_local_vol(surface, spot, times, strikes)`, all differentiable in
@@ -403,7 +462,7 @@ and raise `NotImplementedError` naming the pair otherwise.
 uses `Analytic` when it supports the pair and otherwise raises, asking for an explicit
 engine. It never silently falls back to Monte Carlo.
 
-**ENG-04 Confirmed requirement.** Engines: `Analytic()`, `MonteCarlo(...)` (section 13),
+**ENG-04 Confirmed requirement.** Engines: `Analytic(num_terms=128, fourier_terms=256)` (Merton series length, Heston COS terms), `MonteCarlo(...)` (section 13),
 `PDE(num_space=400, num_time=400, *, theta=0.5, rannacher_steps=2)`,
 `Fourier(method="cos", num_terms=256)`, `Lattice(num_steps=500, kind="crr" | "trinomial")`.
 
@@ -466,9 +525,21 @@ barriers; Greeks come from autograd through the solver and must be smooth in spo
 staircase). Test against closed forms per AT-12.
 
 **FOU-01 Confirmed requirement.** Characteristic-function pricing with COS (default) and
-Carr-Madan for Heston and other affine models.
+Carr-Madan for Heston and other affine models. Both broadcast over batches of strikes,
+expiries and parameters, with the integration grid as a trailing dimension.
 
-**LAT-01 Confirmed requirement.** CRR binomial and trinomial trees, European and American.
+**FOU-02 Build requirement.** COS prices the put and gets the call by parity, so wide
+truncation ranges cannot blow up through ``exp(b)``. The range is asymmetric: the left
+edge uses Fang and Oosterlee's fat-tail rule ``c1 - 12 sqrt(c2 + sqrt(c4))``, the right
+edge ``c1 + 12 sqrt(c2)``. Error falls with ``num_terms`` for every tested parameter set;
+vol of vol near 1.2 at long expiries needs about 1,024 terms. Carr-Madan integrates in
+forward moneyness ``log(K/F)`` with a trapezoid rule of step 0.1, whose error falls like
+``exp(-2 pi alpha / step)``; short expiries need ``num_terms`` in the thousands to reach
+the tail of the integrand.
+
+**LAT-01 Confirmed requirement.** CRR binomial and trinomial trees, European and American,
+in `sq.black_scholes.option_price_binomial`; the `Lattice` engine wraps it. Inputs
+broadcast, with tree nodes as a trailing dimension.
 
 **LSM-01 Confirmed requirement.** Longstaff-Schwartz in the Monte Carlo engine. The
 regression boundary is estimated, then held fixed under `torch.no_grad` when computing
@@ -544,7 +615,7 @@ given the maintainers' location.
 ## 18 Public API surface and packaging
 
 **API-01 Confirmed requirement.** `import smallquant as sq` exposes `sq.math`, `sq.rates`,
-`sq.vol`, `sq.models`, `sq.instruments`, `sq.engines`, `sq.greeks`, `sq.calibration`,
+`sq.vol`, `sq.black_scholes`, `sq.exotics`, `sq.models`, `sq.instruments`, `sq.engines`, `sq.greeks`, `sq.calibration`,
 `sq.price`, `sq.Market`, `sq.set_default_dtype` and `sq.set_validation`.
 
 **API-02 Current implementation.** `smallquant/__init__.py` and
@@ -596,6 +667,10 @@ hardware and library versions.
 **PRF-04 Build requirement.** Each benchmark reports a bump-and-reprice baseline next to the
 autograd result, since that comparison is the library's main claim.
 
+**PRF-05 Confirmed requirement.** On the JAX backend, core functions run under `jax.jit`
+without falling back to Python control flow on array values, and match eager results.
+Benchmarks report PyTorch and JAX timings side by side on the same hardware (PRF-03).
+
 ## 21 Documentation
 
 **DOC-01 Confirmed requirement.** Public functions have type hints and Google-style
@@ -635,10 +710,10 @@ not been exercised.
 | AT-03 | Mixed-device inputs raise; outputs land on the input device; MPS without `float64` warns once and returns `float32`. |
 | AT-04 | A batched call equals the stack of individual calls for every public pricing function. |
 | AT-05 | `gradcheck` and `gradgradcheck` pass in `float64` for every differentiable public function. |
-| AT-06 | Black-Scholes, Black76 and Bachelier match QuantLib and published values for price and first- and second-order Greeks, calls and puts. |
+| AT-06 | `option_price` in its Black-Scholes, Black-76 and Bachelier forms, plus `binary_price` and `asset_or_nothing_price`, match QuantLib and published values for price and first- and second-order Greeks, calls and puts. |
 | AT-07 | Put-call parity, monotonicity and convexity in strike, and price bounds hold over random inputs for every closed form. |
 | AT-08 | Zero expiry and zero vol return intrinsic values with finite gradients (MOD-03). |
-| AT-09 | `implied_vol` round-trips prices across a strike-expiry grid to 1e-10 relative; its gradient equals `1 / vega`; out-of-bounds prices return NaN. |
+| AT-09 | `implied_vol` (Newton) round-trips prices across a strike-expiry grid to 1e-10 relative; its gradient equals `1 / vega`; out-of-bounds prices return NaN. |
 | AT-10 | `greeks.first_order`, `second_order` and `jacobian` agree with closed-form Greeks and with `bump` central differences. |
 | AT-11 | SABR at `strike == forward` has finite price and gradient; Heston characteristic function matches a reference across long expiries without branch jumps. |
 | AT-12 | European options priced by Analytic, PDE, Fourier, Lattice and Monte Carlo agree: deterministic engines to a stated tolerance, Monte Carlo within 3 standard errors. |
@@ -652,7 +727,13 @@ not been exercised.
 | AT-20 | Core functions compile with `fullgraph=True` and match eager results. |
 | AT-21 | Validation on rejects invalid inputs with named errors; validation off never syncs the host (checked with a sync-detecting test hook). |
 | AT-22 | `smallquant.time` suite stays green against the CI QuantLib version; `smallquant` core never imports it. |
-| AT-23 | The wheel builds, installs into a clean environment with only PyTorch, and imports. |
+| AT-23 | The wheel builds, installs into a clean environment with only PyTorch, and imports; installing `smallquant[jax]` adds JAX and the JAX tests pass. |
+| AT-25 | Barone-Adesi-Whaley and Bjerksund-Stensland 1993 match QuantLib's approximation engines; Bjerksund-Stensland 2002 matches published values or a 2,000-step tree; prices are at least European and gradients are finite. |
+| AT-26 | `implied_vol(method=FAST_APPROX)` stays within its stated error over a strike-expiry-vol grid, agrees across spot and forward inputs, returns NaN out of bounds, and is faster than Newton on a large chain. |
+| AT-27 | Heston `european_option_price` matches QuantLib's `AnalyticHestonEngine` and the `Fourier` engine across short and long expiries. |
+| AT-28 | `brownian_bridge_single` and `brownian_bridge_double` match fine-grid bridge simulation, converge in `n_cutoff`, stay in [0, 1], and agree with the survival probability in `payoffs.py`. |
+| AT-29 | `variance_swap_fair_strike` matches QuantLib's `ReplicatingVarianceSwapEngine` without dividends, reproduces TF's worked example, and converges to sigma squared on a dense flat-vol strip. |
+| AT-24 | Every public function on `jax.Array` inputs matches the PyTorch result to QA-02 tolerances; Greeks from `jax.grad` match autograd; `jax.jit` matches eager; mixed `torch.Tensor` and `jax.Array` inputs raise; `float64` without x64 enabled raises (TEN-10). |
 
 **QA-04 Release gate.** No open defect in price correctness, Greek correctness, dtype or
 device handling, or reproducibility. A passing happy-path example is not enough; each
@@ -670,6 +751,7 @@ committing a date. Later phases remain in scope even though they are sequenced l
 | 2 Stochastic vol and calibration | Heston characteristic function, Fourier engine and QE simulation; SABR; SVI/SSVI; `calibrate`. Exit: AT-11, AT-17. |
 | 3 PDE, lattices, early exercise | Tridiagonal solver; PDE engine; lattice engine; American options; Dupire local vol in Monte Carlo and PDE. Exit: AT-12 (all engines), AT-16. |
 | 4 Rates | Curves, differentiable bootstrap, Hull-White. Exit: AT-18, AT-19. |
+| JAX backend | JAX versions of each delivered phase's public functions, the `smallquant[jax]` extra and JAX CI. Timing set by decision D14. Exit: AT-24 for every function delivered so far. |
 | Later | Multi-asset models, XVA building blocks, `Schedule` and further calendars, documentation site. |
 
 **DONE-01 Build requirement.** Each phase delivers version-controlled source, tests, updated
@@ -723,19 +805,25 @@ documents and leave the behaviour unimplemented rather than guess.
 | D09 Ted | How rate instruments receive schedules without the core importing dates (RTS-04) |
 | D10 Ted | Next calendar to port, e.g. Australia (TIM-06) |
 | D11 Ted | Whether Black-Scholes test tolerance should tighten from 1e-9 to QA-02's 1e-10 (QA-03) |
+| D12 Ted | How the JAX backend is exposed (a `smallquant.jax` namespace, or the same functions dispatching on input type) and whether both backends share one implementation over a common array layer or keep two (PRD-08) |
+| D13 Ted | Minimum supported JAX version and whether TPU is tested in CI or by manual release check (ENV-05) |
+| D14 Ted | When the JAX backend lands: alongside each phase, or as a separate phase after Phase 0 (section 23) |
+| D15 Ted | Monte Carlo random numbers on JAX use explicit PRNG keys; whether a seed must give the same paths on both backends or only within one (MC-11) |
 
 ## Appendix C Code and evidence map
 
 | Area | Source landmarks to inspect |
 | --- | --- |
 | Package entry | `smallquant/__init__.py`, `smallquant/models/__init__.py` (docstrings only) |
-| Black-Scholes | `smallquant/models/black_scholes.py`: `_as_tensors`, `price` |
+| Black-Scholes | Baseline: `smallquant/models/black_scholes.py`. Now `smallquant/black_scholes/vanilla_prices.py`: `option_price`, `binary_price`, `asset_or_nothing_price`, `barrier_price` (LAY-01) |
+| Implied vol | `smallquant/black_scholes/implied_vol_lib.py` (`implied_vol`, `ImpliedVolMethod`), `implied_vol_newton_root.py`, `implied_vol_approximation.py` |
+| Model dynamics | `smallquant/models/`: `geometric_brownian_motion.py`, `arithmetic_brownian_motion.py`, `heston/`, `sabr/`, `merton.py`, `cev.py`, `local_vol.py`, `hull_white.py` |
 | Dates | `smallquant/time/date.py`: `Date`, `Month`, `Weekday`, serial conversion |
 | Periods | `smallquant/time/period.py`: `Period`, `TimeUnit`, `Frequency`, `Period.parse` |
 | Day counters | `smallquant/time/daycounter.py`: `DayCounter` and subclasses |
 | Calendars | `smallquant/time/calendar.py` (`Calendar`, `BusinessDayConvention`, `WesternCalendar`); `calendars.py` (concrete calendars) |
 | QuantLib reference | `tests/reference/ql.py`: `european` returns price and Greeks in SmallQuant conventions |
-| Model tests | `tests/models/test_black_scholes_vs_quantlib.py` |
+| Model tests | Baseline: `tests/models/test_black_scholes_vs_quantlib.py`. Now `tests/black_scholes/` (vanilla, American approximations, fast implied vol, Brownian bridge, variance swaps), `tests/exotics/` and `tests/models/` (Heston) |
 | Time tests | `tests/time/test_date_period_vs_quantlib.py`, `test_daycounter_vs_quantlib.py`, `test_calendar_vs_quantlib.py` |
 | Example | `examples/black_scholes.py` |
 | Design docs | `docs/overview.md`, `architecture.md`, `conventions.md`, `api.md`, `greeks.md`, `monte-carlo.md`, `time.md`, `testing.md`, `roadmap.md` |

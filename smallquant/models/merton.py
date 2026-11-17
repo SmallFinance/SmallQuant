@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 
 from smallquant._tensor import align
-from smallquant.models.black_scholes import price as black_price
+from smallquant.black_scholes.vanilla_prices import option_price as black_price
 
 
 def price(

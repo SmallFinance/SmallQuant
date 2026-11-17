@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 
 from ..math.tridiagonal import solve as solve_tridiagonal
-from ..models._common import as_tensors
+from smallquant._tensor import align
 
 
 def price(
@@ -65,7 +65,7 @@ def price(
         raise ValueError("num_space must be at least 8 and num_time at least 1")
     if not 0.0 <= theta <= 1.0:
         raise ValueError("theta must lie in [0, 1]")
-    spot, strike, expiry, rate, vol, div = as_tensors(spot, strike, expiry, rate, vol, div)
+    spot, strike, expiry, rate, vol, div = align(spot, strike, expiry, rate, vol, div)
     batch_shape = torch.broadcast_shapes(
         spot.shape, strike.shape, expiry.shape, rate.shape, vol.shape, div.shape, is_call.shape
     )
@@ -224,7 +224,7 @@ def _with_barrier_or_local_vol(
     local_vol,
 ):
     """Crank-Nicolson with a Dirichlet barrier and an optional local volatility."""
-    spot, strike, expiry, rate, vol, div = as_tensors(spot, strike, expiry, rate, vol, div)
+    spot, strike, expiry, rate, vol, div = align(spot, strike, expiry, rate, vol, div)
     kind = None if barrier_kind is None else barrier_kind.replace("_and_", "_")
     knock_in = kind in ("down_in", "up_in")
     if knock_in:
@@ -271,7 +271,7 @@ def _with_barrier_or_local_vol(
     log_spot = _log_grid(strike, spot.detach(), safe_expiry, vol, num_space, grid_scale)
     spots = torch.exp(log_spot)
     payoff = torch.where(is_call[:, None], torch.relu(spots - strike[:, None]), torch.relu(strike[:, None] - spots))
-    cash = torch.zeros_like(spot) if rebate is None else as_tensors(rebate)[0].expand_as(spot)
+    cash = torch.zeros_like(spot) if rebate is None else align(rebate)[0].expand_as(spot)
     values = payoff
     step = safe_expiry[:, None] / num_time
     for index in range(num_time):
@@ -286,7 +286,7 @@ def _with_barrier_or_local_vol(
         boundary = _boundary(log_spot, strike, rate, div, remaining, is_call, exercise)
         values = _theta_step(values, lower, diag, upper, step, step_theta, boundary)
         if barrier is not None:
-            level = as_tensors(barrier, spot)[0]
+            level = align(barrier, spot)[0]
             if kind == "down_out":
                 values = torch.where(spots < level, cash[:, None], values)
             elif kind == "up_out":

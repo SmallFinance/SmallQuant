@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SmallQuant</title>
+<meta name="description" content="SmallQuant is an open-source derivatives pricing library in PyTorch: batched prices on CPU or GPU, with exact Greeks from autograd.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111'/%3E%3Cpath d='M6 22 C11 22 12 10 16 10 S21 22 26 22' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #fbfbf9;
+  --surface: #ffffff;
+  --ink: #16181d;
+  --muted: #5b616e;
+  --line: #e4e4df;
+  --accent: #1f5f4a;
+  --accent-soft: #e6f0ec;
+  --code-bg: #f3f3ef;
+  --tok-key: #7a3e9d;
+  --tok-str: #1f6b3a;
+  --tok-num: #a2501b;
+  --tok-com: #8a8f99;
+  --tok-fn: #1d4f91;
+  --radius: 10px;
+  --max: 1080px;
+  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1114;
+    --surface: #16191d;
+    --ink: #e8e9eb;
+    --muted: #9aa0ab;
+    --line: #2a2e35;
+    --accent: #6cc4a1;
+    --accent-soft: #15302a;
+    --code-bg: #1a1d22;
+    --tok-key: #c99be6;
+    --tok-str: #8fd19e;
+    --tok-num: #f0a46b;
+    --tok-com: #6f7682;
+    --tok-fn: #8ab4f8;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1114;
+  --surface: #16191d;
+  --ink: #e8e9eb;
+  --muted: #9aa0ab;
+  --line: #2a2e35;
+  --accent: #6cc4a1;
+  --accent-soft: #15302a;
+  --code-bg: #1a1d22;
+  --tok-key: #c99be6;
+  --tok-str: #8fd19e;
+  --tok-num: #f0a46b;
+  --tok-com: #6f7682;
+  --tok-fn: #8ab4f8;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
+.wrap { max-width: var(--max); margin: 0 auto; padding: 0 16px; }
+@media (min-width: 720px) { .wrap { padding: 0 32px; } }
+
+/* Header */
+header.top {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+  -webkit-backdrop-filter: saturate(1.4) blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.bar { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 16px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 650; letter-spacing: -0.01em; }
+.brand svg { width: 26px; height: 26px; flex: none; }
+nav.links { display: flex; gap: 22px; font-size: 15px; }
+nav.links a { color: var(--muted); text-decoration: none; }
+nav.links a:hover { color: var(--ink); }
+nav.links .hide-sm { display: none; }
+@media (min-width: 640px) { nav.links .hide-sm { display: inline; } }
+
+/* Hero */
+.hero { padding-top: 72px; padding-bottom: 56px; }
+@media (min-width: 720px) { .hero { padding-top: 104px; padding-bottom: 80px; } }
+.eyebrow { display: inline-block; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); margin-bottom: 18px; }
+h1 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(36px, 7vw, 64px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin: 0 0 22px;
+  max-width: 16ch;
+}
+.lede { font-size: clamp(17px, 2.2vw, 20px); color: var(--muted); max-width: 60ch; margin: 0 0 32px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 18px; border-radius: 999px;
+  font-weight: 600; font-size: 15px; text-decoration: none;
+  border: 1px solid var(--line); color: var(--ink); background: var(--surface);
+}
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btn.primary:hover { opacity: 0.9; }
+.btn svg { width: 17px; height: 17px; }
+
+.install {
+  margin-top: 40px; display: flex; align-items: center; gap: 12px;
+  font-family: var(--mono); font-size: 14px;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 16px; max-width: 100%; overflow-x: auto;
+}
+.install .prompt { color: var(--tok-com); user-select: none; }
+.install code { white-space: nowrap; }
+
+/* Sections */
+section { padding: 56px 0; border-top: 1px solid var(--line); }
+@media (min-width: 720px) { section { padding: 80px 0; } }
+h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(26px, 4vw, 36px); letter-spacing: -0.015em; line-height: 1.15; margin: 0 0 12px; }
+.section-lede { color: var(--muted); max-width: 62ch; margin: 0 0 36px; }
+
+/* Code */
+.code-card { background: var(--code-bg); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.code-card .label { display: flex; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+pre { margin: 0; padding: 18px 16px; overflow-x: auto; font: 13.5px/1.65 var(--mono); tab-size: 4; }
+@media (min-width: 720px) { pre { padding: 22px 24px; font-size: 14px; } }
+.k { color: var(--tok-key); }
+.s { color: var(--tok-str); }
+.n { color: var(--tok-num); }
+.c { color: var(--tok-com); font-style: italic; }
+.f { color: var(--tok-fn); }
+
+.split { display: grid; gap: 28px; }
+@media (min-width: 900px) { .split { grid-template-columns: 5fr 7fr; gap: 48px; align-items: start; } }
+.points { list-style: none; padding: 0; margin: 0; display: grid; gap: 18px; }
+.points li { padding-left: 30px; position: relative; }
+.points li::before {
+  content: ""; position: absolute; left: 0; top: 7px; width: 14px; height: 14px; border-radius: 4px;
+  background: var(--accent-soft); border: 1.5px solid var(--accent);
+}
+.points strong { display: block; font-weight: 620; }
+.points span { color: var(--muted); font-size: 15px; }
+
+/* Feature grid */
+.grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+@media (min-width: 640px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 960px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
+.card h3 { margin: 0 0 6px; font-size: 17px; font-weight: 640; letter-spacing: -0.005em; }
+.card p { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+.card ul { margin: 0; padding-left: 18px; font-size: 14.5px; }
+.card li { margin: 3px 0; }
+.card code, p code, li code { font-family: var(--mono); font-size: 0.88em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); }
+.card .path { font-family: var(--mono); font-size: 12.5px; color: var(--accent); margin-bottom: 10px; display: block; }
+
+/* Layout tree */
+.tree { font: 13.5px/1.7 var(--mono); }
+.tree .dir { color: var(--ink); font-weight: 600; }
+.tree .note { color: var(--tok-com); }
+
+/* Status */
+.status { display: grid; gap: 16px; }
+@media (min-width: 760px) { .status { grid-template-columns: repeat(3, 1fr); } }
+.tag { display: inline-block; font-size: 12px; font-weight: 650; letter-spacing: 0.03em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; margin-bottom: 10px; }
+.tag.now { background: var(--accent-soft); color: var(--accent); }
+.tag.next { background: var(--code-bg); color: var(--muted); border: 1px solid var(--line); }
+
+footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--muted); font-size: 14px; }
+footer .row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+footer a { color: var(--muted); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap bar">
+    <a class="brand" href="#top" aria-label="SmallQuant home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="currentColor"/><path d="M6 22 C11 22 12 10 16 10 S21 22 26 22" fill="none" stroke="var(--bg)" stroke-width="2.4" stroke-linecap="round"/></svg>
+      SmallQuant
+    </a>
+    <nav class="links" aria-label="Sections">
+      <a href="#example">Example</a>
+      <a href="#features">Features</a>
+      <a class="hide-sm" href="#layout">Layout</a>
+      <a href="https://github.com/SmallFinance/SmallQuant">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <span class="eyebrow">Open source · PyTorch</span>
+    <h1>Derivatives pricing with exact Greeks.</h1>
+    <p class="lede">SmallQuant prices options, calibrates models and builds rate curves as tensor computations. Batch a whole chain, run it on CPU, CUDA or Apple&nbsp;MPS, and take Greeks of any order straight from autograd, with no bump-and-reprice loops and no adjoint code to write.</p>
+    <div class="actions">
+      <a class="btn primary" href="https://github.com/SmallFinance/SmallQuant">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        View on GitHub
+      </a>
+      <a class="btn" href="https://github.com/SmallFinance/SmallQuant/blob/main/docs/specs.md">Read the specification</a>
+    </div>
+    <div class="install" aria-label="Install command">
+      <span class="prompt">$</span>
+      <code>pip install git+https://github.com/SmallFinance/SmallQuant.git</code>
+    </div>
+  </div>
+
+  <section id="example">
+    <div class="wrap split">
+      <div>
+        <h2>One call, a whole chain, every Greek.</h2>
+        <p class="section-lede">Prices are ordinary PyTorch tensors. Pass a batch of spots and get a batch of prices; ask autograd for the derivatives you need.</p>
+        <ul class="points">
+          <li><strong>Tensors in, tensors out</strong><span>Inputs broadcast, outputs stay on the inputs' device, and <code>float64</code> is the default.</span></li>
+          <li><strong>Three models, one function</strong><span><code>option_price</code> is Black-Scholes with <code>spot</code>, Black-76 with <code>forward</code>, and Bachelier with <code>normal_vol</code>.</span></li>
+          <li><strong>Autograd, not bumps</strong><span>Delta, vega, gamma and cross-Greeks come from differentiation. Solvers like implied vol differentiate through the implicit function theorem.</span></li>
+        </ul>
+      </div>
+      <div class="code-card">
+        <div class="label"><span>Python</span><span>Black-Scholes chain with deltas</span></div>
+<pre><code><span class="k">import</span> torch
+<span class="k">import</span> smallquant <span class="k">as</span> sq
+
+<span class="k">def</span> <span class="f">t</span>(x):
+    <span class="k">return</span> torch.tensor(x, dtype=torch.float64)
+
+spot = t([<span class="n">90.0</span>, <span class="n">100.0</span>, <span class="n">110.0</span>]).requires_grad_()
+vol = t(<span class="n">0.2</span>).requires_grad_()
+
+price = sq.black_scholes.<span class="f">option_price</span>(
+    spot=spot, strike=t(<span class="n">100.0</span>), expiry=t(<span class="n">1.0</span>),
+    rate=t(<span class="n">0.05</span>), vol=vol, is_call=<span class="k">True</span>,
+)
+greeks = sq.greeks.<span class="f">first_order</span>(
+    price, {<span class="s">"spot"</span>: spot, <span class="s">"vol"</span>: vol}
+)
+
+price          <span class="c"># [ 5.0912, 10.4506, 17.6630]</span>
+greeks[<span class="s">"spot"</span>]  <span class="c"># [0.4298, 0.6368, 0.7958]</span>
+
+<span class="c"># Same function: Black-76, then Bachelier</span>
+fwd = <span class="k">dict</span>(forward=t(<span class="n">105.0</span>), strike=t(<span class="n">100.0</span>),
+           expiry=t(<span class="n">1.0</span>), discount=t(<span class="n">0.95</span>))
+sq.black_scholes.<span class="f">option_price</span>(
+    **fwd, vol=t(<span class="n">0.2</span>), is_call=<span class="k">True</span>)         <span class="c"># 10.3603</span>
+sq.black_scholes.<span class="f">option_price</span>(
+    **fwd, normal_vol=t(<span class="n">20.0</span>), is_call=<span class="k">True</span>)  <span class="c"># 10.1905</span></code></pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>What's inside</h2>
+      <p class="section-lede">Closed forms, numerical engines and the market plumbing around them. Each closed form is tested against QuantLib, and engines are cross-checked against each other.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>Black-Scholes</h3>
+          <span class="path">sq.black_scholes · sq.exotics</span>
+          <p>Vanilla, binary, barrier and Asian prices, plus closed forms for the classic exotics.</p>
+          <ul>
+            <li>American approximations: Barone-Adesi-Whaley, Bjerksund-Stensland</li>
+            <li>Variance swap fair strikes, Brownian-bridge barrier corrections</li>
+            <li>Lookback, chooser, compound, cliquet, double and partial-time barriers</li>
+            <li>Margrabe, Stulz, quanto, forward-start, extensible</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Implied volatility</h3>
+          <span class="path">sq.black_scholes.implied_vol</span>
+          <p>Black or Bachelier volatility for a whole chain in one call.</p>
+          <ul>
+            <li><code>NEWTON</code>: exact, safeguarded by bisection</li>
+            <li><code>FAST_APPROX</code>: one-shot formula, no iterations</li>
+            <li>Gradient is exactly <code>1 / vega</code></li>
+            <li>SVI and SSVI surfaces, Dupire local vol</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Models</h3>
+          <span class="path">sq.models</span>
+          <p>Dynamics for simulation, and each model's own prices.</p>
+          <ul>
+            <li>Heston: characteristic function, QE scheme, Fourier price</li>
+            <li>SABR: Hagan implied vol and European price</li>
+            <li>Merton jump-diffusion, CEV, local volatility</li>
+            <li>Hull-White bonds, caplets and swaptions</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Engines</h3>
+          <span class="path">sq.engines · sq.price</span>
+          <p>Pair any supported instrument and model with an engine.</p>
+          <ul>
+            <li>Analytic and Fourier (COS, Carr-Madan)</li>
+            <li>Monte Carlo with Sobol and a Brownian bridge</li>
+            <li>Crank-Nicolson PDE with projected American steps</li>
+            <li>CRR and trinomial trees, Longstaff-Schwartz</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Rates and calibration</h3>
+          <span class="path">sq.rates · sq.calibrate</span>
+          <p>Curves whose deltas come straight from autograd.</p>
+          <ul>
+            <li>Discount curves and differentiable bootstrapping</li>
+            <li>Bucketed rate deltas without bumping</li>
+            <li>Calibration with bounded parameters and L-BFGS</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Dates and calendars</h3>
+          <span class="path">smallquant.time</span>
+          <p>A pure-Python port of QuantLib's date machinery, kept out of the pricing core.</p>
+          <ul>
+            <li>Dates, periods and schedules</li>
+            <li>Day-count conventions</li>
+            <li>Business-day calendars with per-instance holiday edits</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="layout">
+    <div class="wrap split">
+      <div>
+        <h2>Laid out like TF Quant Finance</h2>
+        <p class="section-lede">SmallQuant aims to be the maintained, PyTorch-native successor to Google's archived TF Quant Finance, and follows its package structure. Black-Scholes pricing sits in one package with the same files as TF's, and the exotics have their own. Model dynamics live in <code>models/</code>, and each model's prices sit in its own <code>approximations/</code> folder.</p>
+      </div>
+      <div class="code-card">
+        <div class="label"><span>smallquant/</span><span>package structure</span></div>
+<pre class="tree"><code><span class="dir">black_scholes/</span>         <span class="note"># same files as TF</span>
+  vanilla_prices.py    <span class="note"># option, binary, barrier</span>
+  asian_prices.py
+  brownian_bridge.py
+  variance_swaps.py
+  implied_vol_lib.py   <span class="note"># NEWTON | FAST_APPROX</span>
+  implied_vol_newton_root.py
+  implied_vol_approximation.py
+  implied_vol_utils.py
+  crr_binomial_tree.py
+  <span class="dir">approximations/</span>
+    american_option.py <span class="note"># BAW, Bjerksund-Stensland</span>
+<span class="dir">exotics/</span>               <span class="note"># one file per family</span>
+<span class="dir">models/</span>
+  geometric_brownian_motion.py
+  <span class="dir">heston/</span>
+    heston_model.py
+    <span class="dir">approximations/</span>european_option.py
+  <span class="dir">sabr/approximations/</span>
+    implied_volatility.py
+    european_options.py
+  merton.py  cev.py  local_vol.py
+  hull_white.py
+<span class="dir">engines/</span>  <span class="dir">math/</span>  <span class="dir">rates/</span>  <span class="dir">vol/</span>  <span class="dir">time/</span></code></pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="status">
+    <div class="wrap">
+      <h2>Status</h2>
+      <p class="section-lede">SmallQuant is pre-release and under active development. The specification records every decision, what's built and what's still open.</p>
+      <div class="status">
+        <div class="card">
+          <span class="tag now">Built</span>
+          <h3>Pricing core</h3>
+          <p>The closed forms, engines, implied volatility, calibration, rate curves and calendars above, with Greeks from autograd.</p>
+        </div>
+        <div class="card">
+          <span class="tag next">Planned</span>
+          <h3>JAX backend</h3>
+          <p>The same functions on <code>jax.Array</code> inputs, with <code>jax.grad</code> and <code>jax.jit</code>, as an optional install. PyTorch stays the reference.</p>
+        </div>
+        <div class="card">
+          <span class="tag next">Planned</span>
+          <h3>Later</h3>
+          <p>Multi-asset models, XVA building blocks, more country calendars and a documentation site.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap row">
+    <span>SmallQuant · SmallFinance</span>
+    <span><a href="https://github.com/SmallFinance/SmallQuant">GitHub</a> · <a href="https://github.com/SmallFinance/SmallQuant/blob/main/docs/specs.md">Specification</a></span>
+  </div>
+</footer>
+
+</body>
+</html>
