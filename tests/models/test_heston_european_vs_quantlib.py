@@ -3,9 +3,8 @@
 import itertools
 
 import pytest
-import torch
-
 import QuantLib as ql
+import torch
 
 import smallquant as sq
 from smallquant.engines.pricing import Analytic, Fourier

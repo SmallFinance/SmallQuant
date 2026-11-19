@@ -100,7 +100,6 @@ def _legendre_pair(x, n):
 
 def _laguerre_nodes(n, dtype, device):
     k = torch.arange(1, n + 1, dtype=dtype, device=device)
-    guess = (torch.pi * (k - 0.25)) ** 2 / (4.0 * n)
     # Golub-Welsch on the Jacobi matrix is stable for modest n.
     diagonal = 2.0 * k - 1.0
     off = torch.sqrt(k[:-1])

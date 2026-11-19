@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from smallquant.black_scholes.vanilla_prices import option_price as bs_price
 from smallquant.black_scholes._common import as_tensors, bivariate_dr78
+from smallquant.black_scholes.vanilla_prices import option_price as bs_price
 
 _KINDS = ("down_out", "down_in", "up_out", "up_in")
 _RANGES = ("start", "end_b1", "end_b2")

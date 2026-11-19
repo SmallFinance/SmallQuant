@@ -6,10 +6,10 @@ import random
 import pytest
 
 from smallquant.time import (
-    Actual36525,
     Actual360,
     Actual365Fixed,
     Actual366,
+    Actual36525,
     ActualActual,
     Date,
     OneDayCounter,

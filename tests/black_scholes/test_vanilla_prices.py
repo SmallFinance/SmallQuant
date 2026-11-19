@@ -1,5 +1,6 @@
 import pytest
 import torch
+
 from smallquant.black_scholes.vanilla_prices import option_price as price
 
 ql = pytest.importorskip("tests.reference.ql")

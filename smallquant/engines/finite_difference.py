@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import torch
 
-from ..math.tridiagonal import solve as solve_tridiagonal
 from smallquant._tensor import align
+
+from ..math.tridiagonal import solve as solve_tridiagonal
 
 
 def price(

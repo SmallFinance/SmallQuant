@@ -1,9 +1,8 @@
 """Exotic and Asian closed-form prices against the matching QuantLib analytic engines."""
 
 import pytest
-import torch
-
 import QuantLib as ql
+import torch
 
 from smallquant.black_scholes import asian_prices, barrier_price, option_price
 from smallquant.exotics import (
@@ -13,8 +12,8 @@ from smallquant.exotics import (
     compound_prices,
     digital_american_prices,
     dividend_prices,
-    double_barrier_prices,
     double_barrier_binary_prices,
+    double_barrier_prices,
     extensible_prices,
     forward_start_prices,
     lookback_prices,

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import torch
 
+from smallquant.black_scholes._common import as_tensors, norm_cdf
 from smallquant.black_scholes.vanilla_prices import barrier_price as hard_barrier
 from smallquant.black_scholes.vanilla_prices import option_price as bs_price
-from smallquant.black_scholes._common import as_tensors, norm_cdf
 
 _KINDS = ("down_in", "up_in", "down_out", "up_out")
 
@@ -31,7 +31,6 @@ def price(
         spot, strike, barrier_lo, barrier_hi, expiry, rate, vol, div
     )
     rate = torch.where((rate - div).abs() < 1e-10, div + 1e-6, rate)
-    eta = 1.0 if is_call.dtype == torch.bool else 1.0
     call_knock = _knock_in(spot, strike, barrier_lo, barrier_hi, expiry, rate, vol, div, 1.0)
     put_knock = _knock_in(spot, strike, barrier_lo, barrier_hi, expiry, rate, vol, div, -1.0)
     knock = torch.where(is_call, call_knock, put_knock)

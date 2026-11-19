@@ -10,9 +10,8 @@
 import itertools
 
 import pytest
-import torch
-
 import QuantLib as ql
+import torch
 
 from smallquant.black_scholes.approximations import adesi_whaley, bjerksund_stensland
 from smallquant.black_scholes.crr_binomial_tree import option_price_binomial

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import torch
 
+from smallquant.black_scholes._common import as_tensors
 from smallquant.black_scholes.vanilla_prices import barrier_price
 from smallquant.black_scholes.vanilla_prices import option_price as bs_price
+
 from .forward_start_prices import price as forward_price
-from smallquant.black_scholes._common import as_tensors
 
 
 def _quanto_dividend(div, rate, foreign_rate, vol, fx_vol, correlation):

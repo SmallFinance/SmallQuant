@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 
 from .calendar import BusinessDayConvention, Calendar
-from .date import Date, Month, Weekday
+from .date import Date, Weekday
 from .period import Period, TimeUnit
 
 

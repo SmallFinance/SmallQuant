@@ -1,12 +1,11 @@
 """Finite-difference prices against Black-Scholes and QuantLib."""
 
 import pytest
+import QuantLib as ql
 import torch
 
-import QuantLib as ql
-
-from smallquant.engines.finite_difference import price as fd_price
 from smallquant.black_scholes.vanilla_prices import option_price as bs_price
+from smallquant.engines.finite_difference import price as fd_price
 
 pytestmark = pytest.mark.quantlib
 

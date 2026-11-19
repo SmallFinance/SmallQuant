@@ -3,13 +3,12 @@
 import math
 
 import pytest
+import QuantLib as ql
 import torch
 
-import QuantLib as ql
-
+from smallquant.black_scholes import asian_prices, option_price
 from smallquant.engines.monte_carlo import price as mc_price
 from smallquant.math.random import brownian_bridge
-from smallquant.black_scholes import asian_prices, option_price
 from smallquant.models import arithmetic_brownian_motion, geometric_brownian_motion
 from smallquant.payoffs import (
     arithmetic_average_price,

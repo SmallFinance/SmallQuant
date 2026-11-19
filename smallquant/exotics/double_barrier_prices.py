@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from smallquant.black_scholes.vanilla_prices import option_price as bs_price
 from smallquant.black_scholes._common import as_tensors, norm_cdf
+from smallquant.black_scholes.vanilla_prices import option_price as bs_price
 
 _KINDS = ("knock_in", "knock_out")
 

@@ -7,10 +7,10 @@ import pytest
 
 from smallquant.time import (
     TARGET,
+    Australia,
     BespokeCalendar,
     BusinessDayConvention,
     Date,
-    Australia,
     Japan,
     JointCalendar,
     JointCalendarRule,

@@ -7,7 +7,7 @@ import torch
 
 import smallquant as sq
 from smallquant.calibration import calibrate
-from smallquant.engines.pricing import Analytic, Fourier, Lattice, MonteCarlo, PDE
+from smallquant.engines.pricing import PDE, Fourier, Lattice
 from smallquant.instruments import AmericanOption, EuropeanOption
 from smallquant.market import Market
 from smallquant.math.interp import linear
@@ -244,7 +244,6 @@ def test_merton_with_no_jumps_matches_black_scholes():
 def test_bootstrap_reprices_a_flat_curve():
     times = _t([0.5, 1.0, 1.5, 2.0])
     rate = 0.04
-    deposits = times[:1]
     # One deposit, then par swaps on the same grid.
     factors = torch.exp(-_t(rate) * times)
     deltas = _t([0.5, 0.5, 0.5, 0.5])

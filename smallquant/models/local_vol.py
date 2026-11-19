@@ -15,7 +15,6 @@ def step(*, spot, times, normals, rate, div, strikes, expiries, local_vols):
     )
     num_paths, num_steps, dim = normals.shape
     state = spot.reshape(-1)[0].expand(num_paths, dim).clone()
-    paths = [state[:, 0] if dim == 1 else state]
     stored = [state]
     for index in range(num_steps):
         dt = times[index + 1] - times[index]

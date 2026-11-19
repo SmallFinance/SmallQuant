@@ -254,8 +254,8 @@ def test_gradcheck():
     upper = t(0.5).requires_grad_()
     lower = t(-0.4).requires_grad_()
     assert torch.autograd.gradcheck(
-        lambda a, b, c, u, l: brownian_bridge_double(
-            x_start=a, x_end=b, variance=c, upper_barrier=u, lower_barrier=l
+        lambda a, b, c, hi, lo: brownian_bridge_double(
+            x_start=a, x_end=b, variance=c, upper_barrier=hi, lower_barrier=lo
         ),
         (x_start, x_end, variance, upper, lower),
     )

@@ -3,9 +3,8 @@
 import math
 
 import pytest
-import torch
-
 import QuantLib as ql
+import torch
 
 from smallquant.black_scholes import variance_swap_fair_strike, variance_swaps
 from smallquant.black_scholes.variance_swaps import fair_strike, replicating_weights

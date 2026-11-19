@@ -159,7 +159,6 @@ def _transition(rate, start, end, a, sigma, curve, z_rate, z_orth):
     cov = (sigma**2) / a.clamp(min=1e-8) * (
         b - (1.0 - torch.exp(-2.0 * a * dt)) / (2.0 * a.clamp(min=1e-8))
     )
-    std_r = torch.sqrt(var.clamp(min=0.0))
     beta = cov / var.clamp(min=1e-18)
     residual = (var_i - beta**2 * var).clamp(min=0.0)
     deviation = rate - _instantaneous_forward(curve, start)

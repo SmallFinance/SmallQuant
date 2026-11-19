@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from . import finite_difference, fourier
-from .longstaff import discounted_exercise, exercise_index
-from .monte_carlo import price as monte_carlo_price
 from smallquant.black_scholes import asian_prices
+from smallquant.black_scholes.crr_binomial_tree import option_price_binomial
 from smallquant.black_scholes.vanilla_prices import barrier_price, binary_price, option_price
 from smallquant.exotics import (
     chooser_prices,
@@ -31,7 +29,6 @@ from smallquant.instruments import (
     LookbackOption,
 )
 from smallquant.market import Market
-from smallquant.black_scholes.crr_binomial_tree import option_price_binomial
 from smallquant.models import geometric_brownian_motion, heston, local_vol, merton, sabr
 from smallquant.models.params import (
     BachelierParams,
@@ -42,6 +39,10 @@ from smallquant.models.params import (
     MertonParams,
     SABRParams,
 )
+
+from . import finite_difference, fourier
+from .longstaff import discounted_exercise, exercise_index
+from .monte_carlo import price as monte_carlo_price
 
 
 class _Engine:
@@ -420,9 +421,12 @@ class MonteCarlo(_Engine):
 
         score = None
         if self.greeks_method == "likelihood_ratio":
-            score = lambda normals: geometric_brownian_motion.likelihood_weight(
-                normals=normals, times=times, spot=market.spot, vol=params.vol
-            )
+
+            def score(normals):
+                return geometric_brownian_motion.likelihood_weight(
+                    normals=normals, times=times, spot=market.spot, vol=params.vol
+                )
+
         return monte_carlo_price(
             instrument.payoff,
             step,

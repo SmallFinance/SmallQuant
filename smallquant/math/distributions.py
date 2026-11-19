@@ -189,10 +189,6 @@ def bivariate_dr78(a: torch.Tensor, b: torch.Tensor, rho: torch.Tensor) -> torch
     def m_with_zero(u, r):
         # u <= 0, r <= 0
         base = base_call(torch.minimum(u, torch.zeros_like(u)), torch.zeros_like(u), torch.minimum(r, torch.zeros_like(r)))
-        # u <= 0, r >= 0: N(u) - M(u, 0; -r)
-        reduced_pos_rho = na_of(u) - base_call(u, torch.zeros_like(u), -r.abs())
-        # u >= 0, r <= 0: N(u) + 0.5 - 1 + M(-u, 0; r)
-        reduced_neg_rho = na_of(u) - 0.5 + base_call(-u, torch.zeros_like(u), -r.abs())
         # u >= 0, r >= 0: 0.5 - M(-u, 0; -r)
         both_pos = 0.5 - base_call(-u.abs(), torch.zeros_like(u), -r.abs())
         return torch.where(

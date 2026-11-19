@@ -7,8 +7,8 @@ from collections.abc import Callable
 
 import torch
 
-from ..math.random import NormalStream, brownian_bridge as apply_brownian_bridge
-from ..math.random import standard_normal
+from ..math.random import NormalStream, standard_normal
+from ..math.random import brownian_bridge as apply_brownian_bridge
 
 Payoff = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 Step = Callable[[torch.Tensor], torch.Tensor]

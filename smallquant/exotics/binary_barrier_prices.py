@@ -84,8 +84,6 @@ def price(
 
     knocked_out = ((kind == "down_out") & (spot <= barrier)) | ((kind == "up_out") & (spot >= barrier))
     knocked_in = ((kind == "down_in") & (spot <= barrier)) | ((kind == "up_in") & (spot >= barrier))
-    # A knocked-in binary that has already hit is the European digital.
-    european_cash = cash if not asset_or_nothing else spot
     # Asset-or-nothing European is not bs_price. Build it from the same limit:
     # cash-or-nothing European is rate_df * cash * N(phi d2) with mu unadjusted.
     # Fall back to the untriggered formula when not knocked; tests stay away from the barrier.

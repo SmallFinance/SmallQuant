@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from smallquant.black_scholes._common import as_tensors, norm_cdf, norm_pdf
+from smallquant.black_scholes._common import as_tensors, norm_cdf
 
 
 def price(
