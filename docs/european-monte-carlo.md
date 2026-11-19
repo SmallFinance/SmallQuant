@@ -45,4 +45,24 @@ The GPU is about 5 times the 10-thread CPU and 54 times QuantLib.
 
 ## 1,000,000 paths, 1,000 steps
 
-This run was stopped. The float32 path tensor is 4 GB, and the geometric Brownian motion step keeps several copies. The process peaked at 18.8 GB on a 16 GB machine and moved about 10 GB into swap. No timing was recorded.
+`chunk_size` was 8,192. Each block is drawn, stepped and priced, then dropped, so the full path tensor is never stored. One warmup, then one timed run. Closed form **10.450584**.
+
+| Engine | Device | Threads | Price | Stderr | Seconds | Msteps/s | vs QL |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| QuantLib | CPU | 1 | 10.4570 | 0.0147 | 73.7382 | 13.56 | 1.0 |
+| SmallQuant | CPU | 1 | 10.4825 | 0.0148 | 7.5084 | 133.18 | 9.8 |
+| SmallQuant | CPU | 10 | 10.4825 | 0.0148 | 6.5786 | 152.01 | 11.2 |
+| SmallQuant | M4 GPU | — | 10.4482 | 0.0147 | 1.1908 | 839.80 | 61.9 |
+
+The GPU is about 5.5 times the 10-thread CPU and 62 times QuantLib. Peak resident memory for the whole process was 669 MB, and it did not swap. The earlier attempt, which stored every path, was stopped at 18.8 GB.
+
+## Greeks
+
+Same contract, 100,000 paths and 64 steps, float32, no chunking. Autograd through the estimator against a central bump of 0.1% on the same paths. One warmup, then one timed run. The closed-form delta is **0.6368** and the vega is **37.524**.
+
+| Device | Delta | Bump delta | Vega | Bump vega | Autograd | Bump |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| CPU | 0.6378 | 0.6377 | 37.364 | 37.365 | 0.0514 s | 0.1847 s |
+| M4 GPU | 0.6359 | 0.6359 | 38.051 | 38.056 | 0.0146 s | 0.0429 s |
+
+The bump uses four extra prices. Autograd is about 3.6 times that on the CPU and about 2.9 times on the GPU.

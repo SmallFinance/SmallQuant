@@ -7,16 +7,31 @@ import torch
 from . import finite_difference, fourier
 from .longstaff import discounted_exercise, exercise_index
 from .monte_carlo import price as monte_carlo_price
+from smallquant.black_scholes import asian_prices
+from smallquant.black_scholes.vanilla_prices import barrier_price, binary_price, option_price
+from smallquant.exotics import (
+    chooser_prices,
+    cliquet_prices,
+    compound_prices,
+    double_barrier_prices,
+    forward_start_prices,
+    lookback_prices,
+)
 from smallquant.instruments import (
     AmericanOption,
     AsianOption,
     BarrierOption,
+    ChooserOption,
+    CliquetOption,
+    CompoundOption,
     DigitalOption,
+    DoubleBarrierOption,
     EuropeanOption,
+    ForwardStartOption,
+    LookbackOption,
 )
 from smallquant.market import Market
 from smallquant.black_scholes.crr_binomial_tree import option_price_binomial
-from smallquant.black_scholes.vanilla_prices import option_price
 from smallquant.models import geometric_brownian_motion, heston, local_vol, merton, sabr
 from smallquant.models.params import (
     BachelierParams,
@@ -159,6 +174,186 @@ class Analytic(_Engine):
             is_call=instrument.is_call,
         )
 
+    def _digital_black(self, instrument: DigitalOption, params: BlackScholesParams, market: Market):
+        expiry = instrument.expiry
+        unit = binary_price(
+            spot=market.spot,
+            strike=instrument.strike,
+            expiry=expiry,
+            rate=_rate(market, expiry),
+            vol=params.vol,
+            div=_div(market, expiry),
+            is_call=instrument.is_call,
+        )
+        return instrument.cash * unit
+
+    def _barrier_black(self, instrument: BarrierOption, params: BlackScholesParams, market: Market):
+        if instrument.monitoring != "continuous":
+            raise NotImplementedError(
+                "Analytic prices the continuous barrier. Set monitoring='continuous', "
+                "or pass a MonteCarlo engine for discrete monitoring."
+            )
+        expiry = instrument.expiry
+        rebate = instrument.rebate
+        if rebate is None:
+            rebate = torch.zeros((), dtype=market.spot.dtype, device=market.spot.device)
+        return barrier_price(
+            spot=market.spot,
+            strike=instrument.strike,
+            barrier=instrument.barrier,
+            expiry=expiry,
+            rate=_rate(market, expiry),
+            vol=params.vol,
+            div=_div(market, expiry),
+            rebate=rebate,
+            is_call=instrument.is_call,
+            kind=instrument.kind,
+        )
+
+    def _asian_black(self, instrument: AsianOption, params: BlackScholesParams, market: Market):
+        if instrument.average != "geometric":
+            raise NotImplementedError(
+                "Analytic prices geometric Asians. Pass a MonteCarlo engine for an arithmetic Asian."
+            )
+        expiry = instrument.expiry
+        rate = _rate(market, expiry)
+        div = _div(market, expiry)
+        if instrument.sampling == "continuous":
+            return asian_prices.continuous_price(
+                spot=market.spot,
+                strike=instrument.strike,
+                expiry=expiry,
+                rate=rate,
+                vol=params.vol,
+                div=div,
+                is_call=instrument.is_call,
+            )
+        if instrument.sampling != "discrete":
+            raise ValueError("sampling must be 'discrete' or 'continuous'")
+        if instrument.fixing_times is None:
+            raise ValueError("a discrete geometric Asian requires fixing_times")
+        return asian_prices.discrete_price(
+            spot=market.spot,
+            strike=instrument.strike,
+            expiry=expiry,
+            rate=rate,
+            vol=params.vol,
+            div=div,
+            fixing_times=instrument.fixing_times,
+            is_call=instrument.is_call,
+        )
+
+    def _lookback_black(self, instrument: LookbackOption, params: BlackScholesParams, market: Market):
+        expiry = instrument.expiry
+        extremum = market.spot if instrument.extremum is None else instrument.extremum
+        rate = _rate(market, expiry)
+        div = _div(market, expiry)
+        if instrument.strike is None:
+            return lookback_prices.floating_price(
+                spot=market.spot,
+                extremum=extremum,
+                expiry=expiry,
+                rate=rate,
+                vol=params.vol,
+                div=div,
+                is_call=instrument.is_call,
+            )
+        return lookback_prices.fixed_price(
+            spot=market.spot,
+            strike=instrument.strike,
+            minimum=extremum,
+            expiry=expiry,
+            rate=rate,
+            vol=params.vol,
+            div=div,
+            is_call=instrument.is_call,
+        )
+
+    def _forward_black(self, instrument: ForwardStartOption, params: BlackScholesParams, market: Market):
+        expiry = instrument.expiry
+        return forward_start_prices.price(
+            spot=market.spot,
+            moneyness=instrument.moneyness,
+            reset=instrument.reset,
+            expiry=expiry,
+            rate=_rate(market, expiry),
+            vol=params.vol,
+            div=_div(market, expiry),
+            is_call=instrument.is_call,
+        )
+
+    def _compound_black(self, instrument: CompoundOption, params: BlackScholesParams, market: Market):
+        return compound_prices.price(
+            spot=market.spot,
+            strike=instrument.strike,
+            underlying_strike=instrument.underlying_strike,
+            expiry=instrument.expiry,
+            underlying_expiry=instrument.underlying_expiry,
+            rate=_rate(market, instrument.expiry),
+            vol=params.vol,
+            div=_div(market, instrument.expiry),
+            is_call=instrument.is_call,
+            underlying_is_call=instrument.underlying_is_call,
+        )
+
+    def _chooser_black(self, instrument: ChooserOption, params: BlackScholesParams, market: Market):
+        expiry = instrument.expiry
+        rate = _rate(market, expiry)
+        div = _div(market, expiry)
+        if instrument.strike_put is None:
+            return chooser_prices.simple_price(
+                spot=market.spot,
+                strike=instrument.strike,
+                choose=instrument.choose,
+                expiry=expiry,
+                rate=rate,
+                vol=params.vol,
+                div=div,
+            )
+        put_expiry = instrument.expiry if instrument.put_expiry is None else instrument.put_expiry
+        return chooser_prices.complex_price(
+            spot=market.spot,
+            strike_call=instrument.strike,
+            strike_put=instrument.strike_put,
+            choose=instrument.choose,
+            call_expiry=expiry,
+            put_expiry=put_expiry,
+            rate=rate,
+            vol=params.vol,
+            div=div,
+        )
+
+    def _cliquet_black(self, instrument: CliquetOption, params: BlackScholesParams, market: Market):
+        expiry = instrument.expiry
+        kwargs = dict(
+            spot=market.spot,
+            moneyness=instrument.moneyness,
+            reset_times=instrument.reset_times,
+            expiry=expiry,
+            rate=_rate(market, expiry),
+            vol=params.vol,
+            div=_div(market, expiry),
+            is_call=instrument.is_call,
+        )
+        if instrument.kind == "performance":
+            return cliquet_prices.performance_price(**kwargs)
+        return cliquet_prices.price(**kwargs)
+
+    def _double_barrier_black(self, instrument: DoubleBarrierOption, params: BlackScholesParams, market: Market):
+        expiry = instrument.expiry
+        return double_barrier_prices.price(
+            spot=market.spot,
+            strike=instrument.strike,
+            barrier_lo=instrument.barrier_lo,
+            barrier_hi=instrument.barrier_hi,
+            expiry=expiry,
+            rate=_rate(market, expiry),
+            vol=params.vol,
+            div=_div(market, expiry),
+            is_call=instrument.is_call,
+            kind=instrument.kind,
+        )
+
 
 Analytic.registry = {
     (EuropeanOption, BlackScholesParams): Analytic._european_black,
@@ -167,6 +362,15 @@ Analytic.registry = {
     (EuropeanOption, MertonParams): Analytic._european_merton,
     (EuropeanOption, HestonParams): Analytic._european_heston,
     (EuropeanOption, SABRParams): Analytic._european_sabr,
+    (DigitalOption, BlackScholesParams): Analytic._digital_black,
+    (BarrierOption, BlackScholesParams): Analytic._barrier_black,
+    (AsianOption, BlackScholesParams): Analytic._asian_black,
+    (LookbackOption, BlackScholesParams): Analytic._lookback_black,
+    (ForwardStartOption, BlackScholesParams): Analytic._forward_black,
+    (CompoundOption, BlackScholesParams): Analytic._compound_black,
+    (ChooserOption, BlackScholesParams): Analytic._chooser_black,
+    (CliquetOption, BlackScholesParams): Analytic._cliquet_black,
+    (DoubleBarrierOption, BlackScholesParams): Analytic._double_barrier_black,
 }
 
 
@@ -327,6 +531,8 @@ MonteCarlo.registry = {
     (DigitalOption, BlackScholesParams): MonteCarlo._european_black,
     (AsianOption, BlackScholesParams): MonteCarlo._european_black,
     (BarrierOption, BlackScholesParams): MonteCarlo._european_black,
+    (ForwardStartOption, BlackScholesParams): MonteCarlo._european_black,
+    (DoubleBarrierOption, BlackScholesParams): MonteCarlo._european_black,
     (AmericanOption, BlackScholesParams): MonteCarlo._american_black,
     (EuropeanOption, HestonParams): MonteCarlo._heston,
     (EuropeanOption, LocalVolParams): MonteCarlo._local,

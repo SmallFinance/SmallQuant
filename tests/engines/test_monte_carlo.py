@@ -318,3 +318,25 @@ def test_smoothed_digital_delta_is_not_zero():
     density = torch.exp(-0.5 * d2 * d2) / math.sqrt(2.0 * math.pi)
     analytic_delta = cash * torch.exp(-rate * expiry) * density / (spot.detach() * sigma_sqrt)
     assert abs(float(smooth_delta) - float(analytic_delta)) < 0.002
+
+
+def test_normal_stream_matches_one_draw():
+    from smallquant.math.random import NormalStream, standard_normal
+
+    device = torch.device("cpu")
+    for method in ("pseudo", "sobol"):
+        for antithetic in (False, True):
+            kwargs = dict(
+                num_paths=1000,
+                num_steps=7,
+                dim=2,
+                seed=3,
+                dtype=torch.float64,
+                device=device,
+                antithetic=antithetic,
+                method=method,
+            )
+            full = standard_normal(**kwargs)
+            stream = NormalStream(**kwargs)
+            parts = [stream.take(count) for count in (300, 250, 450)]
+            assert torch.equal(full, torch.cat(parts, dim=0))

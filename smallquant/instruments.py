@@ -155,8 +155,9 @@ class AsianOption:
     strike: torch.Tensor
     expiry: torch.Tensor
     is_call: torch.Tensor
-    fixing_times: torch.Tensor
+    fixing_times: torch.Tensor | None = None
     average: str = "arithmetic"
+    sampling: str = "discrete"
 
     def payoff(self, paths: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
         if self.average == "geometric":
@@ -176,11 +177,16 @@ class AsianOption:
 
 @dataclass(frozen=True)
 class LookbackOption:
-    """Floating-strike lookback on the running extremum, or a fixed strike."""
+    """Floating-strike lookback on the running extremum, or a fixed strike.
+
+    ``extremum`` is the minimum seen so far for a call and the maximum seen so
+    far for a put. Omit it when the option is new and the extremum is the spot.
+    """
 
     expiry: torch.Tensor
     is_call: torch.Tensor
     strike: torch.Tensor | None = None
+    extremum: torch.Tensor | None = None
 
     def payoff(self, paths: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
         del times
@@ -226,3 +232,133 @@ class AmericanOption:
         if self.exercise_grid is None:
             return self.observation_times
         return self.exercise_grid
+
+
+@dataclass(frozen=True)
+class ForwardStartOption:
+    """Vanilla struck at ``moneyness`` times the spot on the reset date."""
+
+    moneyness: torch.Tensor
+    reset: torch.Tensor
+    expiry: torch.Tensor
+    is_call: torch.Tensor
+
+    def payoff(self, paths: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
+        index = int(torch.argmin(torch.abs(times - self.reset)).item())
+        strike = self.moneyness * paths[:, index, 0]
+        terminal = paths[:, -1, 0]
+        return torch.where(self.is_call, torch.relu(terminal - strike), torch.relu(strike - terminal))
+
+    @property
+    def observation_times(self) -> torch.Tensor:
+        return _grid(self.expiry, self.reset)
+
+    @property
+    def exercise_times(self) -> torch.Tensor:
+        return self.expiry.reshape(-1)
+
+
+@dataclass(frozen=True)
+class CompoundOption:
+    """Option on an option. Priced by the analytic engine."""
+
+    strike: torch.Tensor
+    underlying_strike: torch.Tensor
+    expiry: torch.Tensor
+    underlying_expiry: torch.Tensor
+    is_call: torch.Tensor
+    underlying_is_call: torch.Tensor
+
+    def payoff(self, paths: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
+        del paths, times
+        raise NotImplementedError("CompoundOption is priced by the analytic engine")
+
+    @property
+    def observation_times(self) -> torch.Tensor:
+        return _grid(self.underlying_expiry, self.expiry)
+
+    @property
+    def exercise_times(self) -> torch.Tensor:
+        return self.expiry.reshape(-1)
+
+
+@dataclass(frozen=True)
+class ChooserOption:
+    """Chooser. Omit ``strike_put`` for a simple chooser with one strike and one expiry."""
+
+    strike: torch.Tensor
+    choose: torch.Tensor
+    expiry: torch.Tensor
+    strike_put: torch.Tensor | None = None
+    put_expiry: torch.Tensor | None = None
+
+    def payoff(self, paths: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
+        del paths, times
+        raise NotImplementedError("ChooserOption is priced by the analytic engine")
+
+    @property
+    def observation_times(self) -> torch.Tensor:
+        return _grid(self.expiry, self.choose)
+
+    @property
+    def exercise_times(self) -> torch.Tensor:
+        return self.expiry.reshape(-1)
+
+
+@dataclass(frozen=True)
+class CliquetOption:
+    """Sum of forward-starting vanillas on ``reset_times``. ``kind`` is ``vanilla`` or ``performance``."""
+
+    moneyness: torch.Tensor
+    reset_times: torch.Tensor
+    expiry: torch.Tensor
+    is_call: torch.Tensor
+    kind: str = "vanilla"
+
+    def __post_init__(self) -> None:
+        if self.kind not in ("vanilla", "performance"):
+            raise ValueError("kind must be 'vanilla' or 'performance'")
+
+    def payoff(self, paths: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
+        del paths, times
+        raise NotImplementedError("CliquetOption is priced by the analytic engine")
+
+    @property
+    def observation_times(self) -> torch.Tensor:
+        return _grid(self.expiry, self.reset_times)
+
+    @property
+    def exercise_times(self) -> torch.Tensor:
+        return self.expiry.reshape(-1)
+
+
+@dataclass(frozen=True)
+class DoubleBarrierOption:
+    """European option with a lower and an upper barrier."""
+
+    strike: torch.Tensor
+    expiry: torch.Tensor
+    barrier_lo: torch.Tensor
+    barrier_hi: torch.Tensor
+    is_call: torch.Tensor
+    kind: str
+
+    def __post_init__(self) -> None:
+        if self.kind not in ("knock_in", "knock_out"):
+            raise ValueError(f"unknown double-barrier kind {self.kind!r}")
+
+    def payoff(self, paths: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
+        spot = paths[..., 0]
+        hit = (spot <= self.barrier_lo).any(dim=-1) | (spot >= self.barrier_hi).any(dim=-1)
+        vanilla = european(paths, times, strike=self.strike, is_call=self.is_call)
+        knocked_out = self.kind == "knock_out"
+        alive = torch.where(knocked_out, ~hit, hit)
+        return torch.where(alive, vanilla, torch.zeros_like(vanilla))
+
+    @property
+    def observation_times(self) -> torch.Tensor:
+        return _grid(self.expiry)
+
+    @property
+    def exercise_times(self) -> torch.Tensor:
+        return self.expiry.reshape(-1)

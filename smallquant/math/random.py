@@ -19,42 +19,181 @@ def standard_normal(
     """Standard normals of shape ``[num_paths, num_steps, dim]``.
 
     With ``antithetic`` the second half of the paths is the negation of the
-    first half, and ``num_paths`` must be even. One ``torch.Generator`` draw
-    produces the base sample, so a later slice into chunks is the same tensor
-    as the unchunked draw.
+    first half, and ``num_paths`` must be even. The draw is the same tensor
+    ``NormalStream.take`` returns in successive slices.
     """
-    if num_paths < 1 or num_steps < 1 or dim < 1:
-        raise ValueError("num_paths, num_steps and dim must be positive")
-    base = num_paths
-    if antithetic:
-        if num_paths % 2 != 0:
+    return NormalStream(
+        num_paths=num_paths,
+        num_steps=num_steps,
+        dim=dim,
+        seed=seed,
+        dtype=dtype,
+        device=device,
+        antithetic=antithetic,
+        method=method,
+    ).take(num_paths)
+
+
+class NormalStream:
+    """Sequential slices of one ``standard_normal`` draw.
+
+    Each ``take`` advances along the path axis. Concatenating the slices
+    reproduces the single draw, including the antithetic half, without
+    allocating the full tensor. Pseudo-random blocks have a fixed path count:
+    PyTorch's CPU normal kernel does not resume a partial call, so the block
+    boundaries stay put no matter how the caller slices. A slice in the
+    antithetic half replays those same blocks from ``seed``.
+    """
+
+    def __init__(
+        self,
+        *,
+        num_paths: int,
+        num_steps: int,
+        dim: int,
+        seed: int,
+        dtype: torch.dtype,
+        device: torch.device,
+        antithetic: bool = False,
+        method: str = "pseudo",
+    ):
+        if num_paths < 1 or num_steps < 1 or dim < 1:
+            raise ValueError("num_paths, num_steps and dim must be positive")
+        if method not in ("pseudo", "sobol"):
+            raise ValueError("method must be 'pseudo' or 'sobol'")
+        if antithetic and num_paths % 2 != 0:
             raise ValueError("num_paths must be even when antithetic is on")
-        base = num_paths // 2
-    if method == "sobol":
-        return _sobol(base, num_paths, num_steps, dim, seed, dtype, device, antithetic)
-    if method != "pseudo":
-        raise ValueError("method must be 'pseudo' or 'sobol'")
-    generator = torch.Generator(device=device)
-    generator.manual_seed(seed)
-    sample = torch.randn(base, num_steps, dim, dtype=dtype, device=device, generator=generator)
-    if antithetic:
-        sample = torch.cat((sample, -sample), dim=0)
-    return sample
+        self.num_paths = num_paths
+        self.num_steps = num_steps
+        self.dim = dim
+        self.seed = seed
+        self.dtype = dtype
+        self.device = device
+        self.antithetic = antithetic
+        self.method = method
+        self.base = num_paths // 2 if antithetic else num_paths
+        self.pos = 0
+        self._live: _PseudoCursor | None = None
+        self._replay: _PseudoCursor | None = None
+        if method == "sobol":
+            self._engine = torch.quasirandom.SobolEngine(
+                dimension=num_steps * dim, scramble=True, seed=seed
+            )
+
+    def take(self, count: int) -> torch.Tensor:
+        """The next ``count`` paths. ``count`` must not run past ``num_paths``."""
+        if count < 1 or self.pos + count > self.num_paths:
+            raise ValueError("take runs past the end of the stream")
+        parts: list[torch.Tensor] = []
+        left = count
+        while left:
+            if self.pos < self.base:
+                n = min(left, self.base - self.pos)
+                parts.append(self._draw_base(n))
+                self.pos += n
+                left -= n
+            else:
+                n = min(left, self.num_paths - self.pos)
+                lo = self.pos - self.base
+                parts.append(-self._replay_base(lo, lo + n))
+                self.pos += n
+                left -= n
+        if len(parts) == 1:
+            return parts[0]
+        return torch.cat(parts, dim=0)
+
+    def _cursor(self, replay: bool) -> _PseudoCursor:
+        if replay:
+            if self._replay is None:
+                self._replay = _PseudoCursor(
+                    self.base, self.num_steps, self.dim, self.seed, self.dtype, self.device
+                )
+            return self._replay
+        if self._live is None:
+            self._live = _PseudoCursor(
+                self.base, self.num_steps, self.dim, self.seed, self.dtype, self.device
+            )
+        return self._live
+
+    def _draw_base(self, count: int) -> torch.Tensor:
+        if self.method == "pseudo":
+            return self._cursor(False).slice(self.pos, self.pos + count)
+        return _sobol_draw(self._engine, count, self.num_steps, self.dim, self.dtype, self.device)
+
+    def _replay_base(self, lo: int, hi: int) -> torch.Tensor:
+        if self.method == "pseudo":
+            return self._cursor(True).slice(lo, hi)
+        engine = torch.quasirandom.SobolEngine(
+            dimension=self.num_steps * self.dim, scramble=True, seed=self.seed
+        )
+        if lo:
+            engine.fast_forward(lo)
+        return _sobol_draw(engine, hi - lo, self.num_steps, self.dim, self.dtype, self.device)
 
 
-def _sobol(base, num_paths, num_steps, dim, seed, dtype, device, antithetic):
-    """Scrambled Sobol, drawn on CPU and moved so the stream does not depend on device."""
+class _PseudoCursor:
+    """Base-path draws in fixed blocks, sliced to whatever the caller asks.
+
+    ``slice`` only moves forward. Skipping discards blocks instead of storing them.
+    """
+
+    def __init__(self, base: int, num_steps: int, dim: int, seed: int, dtype: torch.dtype, device: torch.device):
+        self.base = base
+        self.num_steps = num_steps
+        self.dim = dim
+        self.dtype = dtype
+        self.device = device
+        self.block = 4096
+        self.generator = torch.Generator(device=device)
+        self.generator.manual_seed(seed)
+        self.buf: torch.Tensor | None = None
+        self.buf_start = 0
+        self.produced = 0
+        self.served = 0
+
+    def slice(self, start: int, end: int) -> torch.Tensor:
+        if start < self.served:
+            raise RuntimeError("pseudo stream was read out of order")
+        while self.served < start:
+            self._pull(start)
+        parts: list[torch.Tensor] = []
+        while self.served < end:
+            parts.append(self._pull(end))
+        if len(parts) == 1:
+            return parts[0]
+        return torch.cat(parts, dim=0)
+
+    def _pull(self, end: int) -> torch.Tensor:
+        if self.buf is None or self.served >= self.produced:
+            count = min(self.block, self.base - self.produced)
+            if count < 1:
+                raise RuntimeError("pseudo stream ran past the base paths")
+            self.buf = torch.randn(
+                count,
+                self.num_steps,
+                self.dim,
+                dtype=self.dtype,
+                device=self.device,
+                generator=self.generator,
+            )
+            self.buf_start = self.produced
+            self.produced += count
+        local = self.served - self.buf_start
+        take = min(end, self.produced) - self.served
+        self.served += take
+        piece = self.buf[local : local + take]
+        if self.served == self.produced:
+            self.buf = None
+        return piece
+
+
+def _sobol_draw(engine, count, num_steps, dim, dtype, device) -> torch.Tensor:
+    """Scrambled Sobol normals. The engine is drawn on CPU so the stream ignores device."""
     from .distributions import normal_icdf
 
-    engine = torch.quasirandom.SobolEngine(dimension=num_steps * dim, scramble=True, seed=seed)
-    uniforms = engine.draw(base).clamp(1e-12, 1.0 - 1e-12)
+    uniforms = engine.draw(count).clamp(1e-12, 1.0 - 1e-12)
     sample = normal_icdf(uniforms.to(dtype=torch.float64)).to(dtype=dtype, device=device)
-    sample = sample.reshape(base, num_steps, dim)
-    if antithetic:
-        sample = torch.cat((sample, -sample), dim=0)
-    if sample.shape[0] != num_paths:
-        raise ValueError("sobol draw did not match num_paths")
-    return sample
+    return sample.reshape(count, num_steps, dim)
 
 
 def brownian_bridge(normals: torch.Tensor, times: torch.Tensor) -> torch.Tensor:

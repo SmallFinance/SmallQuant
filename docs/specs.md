@@ -42,6 +42,15 @@ since been fixed.
   `models/<model>/approximations/`. Old paths such as `sq.models.black_scholes.price` and
   `sq.vol.implied_vol` are removed, not aliased.
 
+**Code since this baseline.** The October status above is historical. The tree now has
+`black_scholes`, `exotics`, `models` (Heston, SABR, Merton, local vol, Hull-White),
+`engines` (analytic, Monte Carlo, PDE, Fourier, lattice), `greeks`, `calibration`,
+`rates`, `vol` and `time` (including `Schedule` and an Australia calendar). `sq.price`
+with `BlackScholesParams` prices European, digital, continuous-barrier, geometric Asian,
+lookback, forward-start, compound, chooser, cliquet and double-barrier contracts.
+Monte Carlo draws pseudo-random normals in fixed path blocks, so `chunk_size` prices a
+block and drops it instead of storing every path. JAX (PRD-08, D12, D14) is not started.
+
 ## Contents
 
 1. [How to use this specification](#1-how-to-use-this-specification)

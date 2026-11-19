@@ -17,7 +17,7 @@ def price(instrument, model_params, market: Market, engine=None):
     if not engine.supports(instrument, model_params):
         listed = ", ".join(f"{left}/{right}" for left, right in engine.supported_pairs()) or "none"
         raise NotImplementedError(
-            f"Analytic does not price {type(instrument).__name__} with {type(model_params).__name__}. "
-            f"Pass an engine. Supported: {listed}"
+            f"{type(engine).__name__} does not price {type(instrument).__name__} "
+            f"with {type(model_params).__name__}. Supported: {listed}"
         )
     return engine.price(instrument, model_params, market)

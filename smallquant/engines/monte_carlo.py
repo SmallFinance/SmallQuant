@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 import torch
 
-from ..math.random import brownian_bridge as apply_brownian_bridge
+from ..math.random import NormalStream, brownian_bridge as apply_brownian_bridge
 from ..math.random import standard_normal
 
 Payoff = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
@@ -41,8 +41,10 @@ def price(
 
     ``brownian_bridge`` reorders each path's normals with QuantLib's bridge
     before ``step``. Antithetic variates stack each draw with its negation.
-    ``chunk_size`` evaluates the step and the payoff in path blocks after one
-    generator draw, so the price matches the unchunked call.
+    ``chunk_size`` draws, steps and prices path blocks, dropping each block
+    before the next. The blocks are slices of one seeded stream, so the price
+    matches the unchunked call. Moment matching still draws the whole normal
+    tensor, because the mean and variance are taken over every path.
 
     A control variate subtracts ``beta * (control - control_price)``. ``beta``
     is the least-squares coefficient on these paths and is held fixed for
@@ -55,31 +57,48 @@ def price(
     if (control is None) != (control_price is None):
         raise ValueError("control and control_price must be supplied together")
     steps = times.numel() - 1
-    normals = standard_normal(
-        num_paths=num_paths,
-        num_steps=steps,
-        dim=dim,
-        seed=seed,
-        dtype=times.dtype,
-        device=times.device,
-        antithetic=antithetic,
-    )
-    if moment_match:
-        centered = normals - normals.mean(dim=0, keepdim=True)
-        normals = centered / centered.std(dim=0, unbiased=False, keepdim=True).clamp(min=1e-8)
-    if brownian_bridge:
-        normals = apply_brownian_bridge(normals, times)
     if greeks_method not in ("pathwise", "likelihood_ratio"):
         raise ValueError("greeks_method must be 'pathwise' or 'likelihood_ratio'")
     if greeks_method == "likelihood_ratio" and score is None:
         raise ValueError("likelihood_ratio requires score(normals)")
     discount = torch.as_tensor(discount, dtype=times.dtype, device=times.device)
+    block = num_paths if chunk_size is None else chunk_size
+
+    stored = None
+    stream = None
+    if moment_match:
+        stored = standard_normal(
+            num_paths=num_paths,
+            num_steps=steps,
+            dim=dim,
+            seed=seed,
+            dtype=times.dtype,
+            device=times.device,
+            antithetic=antithetic,
+        )
+        centered = stored - stored.mean(dim=0, keepdim=True)
+        stored = centered / centered.std(dim=0, unbiased=False, keepdim=True).clamp(min=1e-8)
+    else:
+        stream = NormalStream(
+            num_paths=num_paths,
+            num_steps=steps,
+            dim=dim,
+            seed=seed,
+            dtype=times.dtype,
+            device=times.device,
+            antithetic=antithetic,
+        )
 
     values: list[torch.Tensor] = []
     controls: list[torch.Tensor] = []
-    block = num_paths if chunk_size is None else chunk_size
     for start in range(0, num_paths, block):
-        draw = normals[start : start + block]
+        count = min(block, num_paths - start)
+        if stored is None:
+            draw = stream.take(count)
+        else:
+            draw = stored[start : start + count]
+        if brownian_bridge:
+            draw = apply_brownian_bridge(draw, times)
         paths = step(draw)
         if paths.ndim != 3 or paths.shape[0] != min(block, num_paths - start) or paths.shape[1] != steps + 1:
             raise ValueError("step must return [num_paths, num_steps + 1, dim]")

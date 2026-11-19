@@ -53,7 +53,9 @@ def _sync(device: torch.device) -> None:
         torch.cuda.synchronize()
 
 
-def smallquant_once(device: torch.device, paths: int, steps: int, seed: int) -> tuple[float, float]:
+def smallquant_once(
+    device: torch.device, paths: int, steps: int, seed: int, chunk_size: int | None
+) -> tuple[float, float]:
     dtype = torch.float32
     times = torch.linspace(0, EXPIRY, steps + 1, dtype=dtype, device=device)
     spot = torch.tensor(SPOT, dtype=dtype, device=device)
@@ -78,6 +80,7 @@ def smallquant_once(device: torch.device, paths: int, steps: int, seed: int) -> 
         num_paths=paths,
         seed=seed,
         antithetic=False,
+        chunk_size=chunk_size,
         return_stderr=True,
     )
     return float(estimate), float(stderr)
@@ -140,6 +143,17 @@ def main() -> None:
     parser.add_argument("--threads", type=int, nargs="+", default=[1, os.cpu_count() or 1])
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=None,
+        help="Path block size. Set this for large path counts so the full path tensor is never stored.",
+    )
+    parser.add_argument(
+        "--greeks",
+        action="store_true",
+        help="After the price table, time autograd delta and vega against a central bump.",
+    )
     args = parser.parse_args()
     if args.repeats < 1:
         raise SystemExit("--repeats must be positive")
@@ -174,7 +188,9 @@ def main() -> None:
                 device = torch.device("cpu")
 
                 def run_cpu(device=device, paths=paths, steps=steps):
-                    estimate, stderr = smallquant_once(device, paths, steps, args.seed)
+                    estimate, stderr = smallquant_once(
+                        device, paths, steps, args.seed, args.chunk_size
+                    )
                     _sync(device)
                     return estimate, stderr
 
@@ -186,7 +202,9 @@ def main() -> None:
 
             if mps is not None:
                 def run_mps(device=mps, paths=paths, steps=steps):
-                    estimate, stderr = smallquant_once(device, paths, steps, args.seed)
+                    estimate, stderr = smallquant_once(
+                        device, paths, steps, args.seed, args.chunk_size
+                    )
                     _sync(device)
                     return estimate, stderr
 
@@ -196,6 +214,118 @@ def main() -> None:
                     "smallquant", "mps", "float32", 0, paths, steps,
                     price, stderr, seconds, quantlib_seconds,
                 )
+
+    if args.greeks:
+        _time_greeks(args, mps)
+
+
+def _greek_once(device: torch.device, paths: int, steps: int, seed: int, chunk_size: int | None):
+    dtype = torch.float32
+    times = torch.linspace(0, EXPIRY, steps + 1, dtype=dtype, device=device)
+    spot = torch.tensor(SPOT, dtype=dtype, device=device, requires_grad=True)
+    rate = torch.tensor(RATE, dtype=dtype, device=device)
+    vol = torch.tensor(VOL, dtype=dtype, device=device, requires_grad=True)
+    div = torch.tensor(DIV, dtype=dtype, device=device)
+    strike = torch.tensor(STRIKE, dtype=dtype, device=device)
+    is_call = torch.tensor(True, device=device)
+
+    def step(normals: torch.Tensor) -> torch.Tensor:
+        return geometric_brownian_motion.step(
+            spot=spot, times=times, normals=normals, rate=rate, vol=vol, div=div
+        )
+
+    def payoff(paths_tensor: torch.Tensor, grid: torch.Tensor) -> torch.Tensor:
+        return european(paths_tensor, grid, strike=strike, is_call=is_call)
+
+    estimate, _stderr = mc_price(
+        payoff,
+        step,
+        times=times,
+        discount=torch.exp(-rate * times[-1]),
+        num_paths=paths,
+        seed=seed,
+        antithetic=False,
+        chunk_size=chunk_size,
+        return_stderr=True,
+    )
+    delta, vega = torch.autograd.grad(estimate, (spot, vol))
+    return float(estimate.detach()), float(delta), float(vega)
+
+
+def _bumped_price(device, paths, steps, seed, chunk_size, spot, vol):
+    dtype = torch.float32
+    times = torch.linspace(0, EXPIRY, steps + 1, dtype=dtype, device=device)
+    spot_t = torch.tensor(spot, dtype=dtype, device=device)
+    rate = torch.tensor(RATE, dtype=dtype, device=device)
+    vol_t = torch.tensor(vol, dtype=dtype, device=device)
+    div = torch.tensor(DIV, dtype=dtype, device=device)
+    strike = torch.tensor(STRIKE, dtype=dtype, device=device)
+    is_call = torch.tensor(True, device=device)
+
+    def step(normals: torch.Tensor) -> torch.Tensor:
+        return geometric_brownian_motion.step(
+            spot=spot_t, times=times, normals=normals, rate=rate, vol=vol_t, div=div
+        )
+
+    estimate, _stderr = mc_price(
+        lambda paths_tensor, grid: european(paths_tensor, grid, strike=strike, is_call=is_call),
+        step,
+        times=times,
+        discount=torch.exp(-rate * times[-1]),
+        num_paths=paths,
+        seed=seed,
+        antithetic=False,
+        chunk_size=chunk_size,
+        return_stderr=True,
+    )
+    return float(estimate)
+
+
+def _time_greeks(args, mps) -> None:
+    paths = args.paths[0]
+    steps = args.steps[-1]
+    rel = 1e-3
+    print()
+    print(
+        f"greeks  paths={paths} steps={steps} chunk={args.chunk_size} "
+        "autograd versus central bump of the same Monte Carlo estimator"
+    )
+    devices = [torch.device("cpu")]
+    if mps is not None:
+        devices.append(mps)
+    for device in devices:
+        torch.set_num_threads(1 if device.type == "cpu" else os.cpu_count() or 1)
+
+        def autograd_run(device=device):
+            _sync(device)
+            started = time.perf_counter()
+            price, delta, vega = _greek_once(device, paths, steps, args.seed, args.chunk_size)
+            _sync(device)
+            return price, delta, vega, time.perf_counter() - started
+
+        autograd_run()
+        price, delta, vega, forward_backward = autograd_run()
+
+        def bump_run(device=device):
+            _sync(device)
+            started = time.perf_counter()
+            up = _bumped_price(device, paths, steps, args.seed, args.chunk_size, SPOT * (1 + rel), VOL)
+            down = _bumped_price(device, paths, steps, args.seed, args.chunk_size, SPOT * (1 - rel), VOL)
+            vol_up = _bumped_price(device, paths, steps, args.seed, args.chunk_size, SPOT, VOL * (1 + rel))
+            vol_down = _bumped_price(device, paths, steps, args.seed, args.chunk_size, SPOT, VOL * (1 - rel))
+            _sync(device)
+            bump_delta = (up - down) / (2 * SPOT * rel)
+            bump_vega = (vol_up - vol_down) / (2 * VOL * rel)
+            return bump_delta, bump_vega, time.perf_counter() - started
+
+        bump_run()
+        bump_delta, bump_vega, bump_seconds = bump_run()
+        print(
+            f"{device.type:<6} price {price:8.4f}  "
+            f"delta {delta:8.4f} (bump {bump_delta:8.4f})  "
+            f"vega {vega:8.4f} (bump {bump_vega:8.4f})  "
+            f"autograd {forward_backward:8.4f}s  bump {bump_seconds:8.4f}s"
+        )
 
 
 def _report(
