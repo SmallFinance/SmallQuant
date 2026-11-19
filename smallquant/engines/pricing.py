@@ -401,13 +401,19 @@ class MonteCarlo(_Engine):
         self.steps = steps
 
     def _times(self, instrument, market):
-        if hasattr(instrument, "observation_times"):
-            grid = instrument.observation_times
-            if grid.numel() >= 2:
-                return grid
-        count = self.steps
-        expiry = instrument.expiry
-        return torch.arange(count + 1, dtype=expiry.dtype, device=expiry.device) * (expiry / count)
+        """Sorted merge of the instrument's dates with ``steps`` equal steps to expiry (MC-02).
+
+        Equal-step points within ``1e-12 * expiry`` of an instrument date are dropped, so a
+        fixing or exercise date is never followed by a near-zero step.
+        """
+        expiry = instrument.expiry.reshape(-1)[0]
+        uniform = torch.arange(self.steps + 1, dtype=expiry.dtype, device=expiry.device) * (expiry / self.steps)
+        if not hasattr(instrument, "observation_times"):
+            return uniform
+        dates = instrument.observation_times
+        gap = (uniform.unsqueeze(-1) - dates.unsqueeze(0)).abs().min(dim=-1).values
+        keep = gap > 1e-12 * expiry.abs().clamp(min=1.0)
+        return torch.unique(torch.cat((dates, uniform[keep])), sorted=True)
 
     def _european_black(self, instrument, params, market):
         times = self._times(instrument, market)
@@ -464,7 +470,11 @@ class MonteCarlo(_Engine):
             antithetic=self.antithetic,
         )
         paths = step(normals)
-        when = exercise_index(paths, times, instrument.intrinsic, rate, self.degree)
+        # Without an exercise grid every simulation time is an exercise date.
+        exercisable = None
+        if instrument.exercise_grid is not None:
+            exercisable = torch.isin(times, instrument.observation_times)
+        when = exercise_index(paths, times, instrument.intrinsic, rate, self.degree, exercisable)
         # Re-simulate under grad with the frozen policy by stepping again.
         paths = step(normals)
         return discounted_exercise(paths, times, instrument.intrinsic, rate, when).mean()

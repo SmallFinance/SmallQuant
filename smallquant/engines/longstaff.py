@@ -5,12 +5,20 @@ from __future__ import annotations
 import torch
 
 
-def exercise_index(paths: torch.Tensor, times: torch.Tensor, intrinsic, rate: torch.Tensor, degree: int = 2):
+def exercise_index(
+    paths: torch.Tensor,
+    times: torch.Tensor,
+    intrinsic,
+    rate: torch.Tensor,
+    degree: int = 2,
+    exercisable: torch.Tensor | None = None,
+):
     """Exercise time index per path. The regression is under ``no_grad``.
 
     The basis is monomials ``1, x, ..., x^degree`` in the spot, fitted on the
     same in-the-money paths. The boundary is a boolean policy, so Greeks of a
     later discounted exercise value do not move the boundary (envelope theorem).
+    ``exercisable`` is a bool mask over ``times``; ``None`` allows every time.
     """
     spot = paths[..., 0]
     num_paths, num_times = spot.shape
@@ -18,6 +26,9 @@ def exercise_index(paths: torch.Tensor, times: torch.Tensor, intrinsic, rate: to
         cashflow = intrinsic(spot[:, -1])
         when = torch.full((num_paths,), num_times - 1, dtype=torch.long, device=spot.device)
         for index in range(num_times - 2, 0, -1):
+            if exercisable is not None and not bool(exercisable[index]):
+                cashflow = cashflow * torch.exp(-rate * (times[index + 1] - times[index]))
+                continue
             exercise_value = intrinsic(spot[:, index])
             in_the_money = exercise_value > 0
             if not bool(in_the_money.any()):

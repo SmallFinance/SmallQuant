@@ -125,8 +125,7 @@ class BarrierOption:
             hit = (spot >= barrier).any(dim=-1)
         vanilla = european(paths, times, strike=self.strike, is_call=self.is_call)
         rebate = self.rebate if self.rebate is not None else torch.zeros_like(vanilla)
-        knocked_out = self.kind.endswith("out")
-        alive = torch.where(knocked_out, ~hit, hit)
+        alive = ~hit if self.kind.endswith("out") else hit
         return torch.where(alive, vanilla, rebate)
 
     def _barrier(self, times: torch.Tensor) -> torch.Tensor:
@@ -160,6 +159,11 @@ class AsianOption:
     sampling: str = "discrete"
 
     def payoff(self, paths: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
+        if self.fixing_times is not None:
+            # The simulation grid may hold extra steps; average on the fixing dates only.
+            on_date = torch.isin(times, self.observation_times)
+            paths = paths[..., on_date, :]
+            times = times[on_date]
         if self.average == "geometric":
             return geometric_average_price(paths, times, strike=self.strike, is_call=self.is_call)
         if self.average == "arithmetic":
@@ -351,8 +355,7 @@ class DoubleBarrierOption:
         spot = paths[..., 0]
         hit = (spot <= self.barrier_lo).any(dim=-1) | (spot >= self.barrier_hi).any(dim=-1)
         vanilla = european(paths, times, strike=self.strike, is_call=self.is_call)
-        knocked_out = self.kind == "knock_out"
-        alive = torch.where(knocked_out, ~hit, hit)
+        alive = ~hit if self.kind == "knock_out" else hit
         return torch.where(alive, vanilla, torch.zeros_like(vanilla))
 
     @property

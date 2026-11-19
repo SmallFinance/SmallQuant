@@ -339,3 +339,123 @@ def test_normal_stream_matches_one_draw():
             stream = NormalStream(**kwargs)
             parts = [stream.take(count) for count in (300, 250, 450)]
             assert torch.equal(full, torch.cat(parts, dim=0))
+
+
+def _engine_market():
+    from smallquant.market import Market
+    from smallquant.models.params import BlackScholesParams
+
+    return Market(spot=_t(100.0), rate=_t(0.05), div=_t(0.02)), BlackScholesParams(vol=_t(0.3))
+
+
+def test_engine_grid_merges_steps_with_instrument_dates():
+    """MC-02: the grid is the instrument's dates merged with ``steps`` equal steps."""
+    from smallquant.engines.pricing import MonteCarlo
+    from smallquant.instruments import AsianOption, EuropeanOption
+
+    market, _ = _engine_market()
+    european = EuropeanOption(strike=_t(100.0), expiry=_t(1.0), is_call=torch.tensor(True))
+    assert torch.allclose(MonteCarlo(steps=8)._times(european, market), torch.linspace(0.0, 1.0, 9, dtype=torch.float64))
+    asian = AsianOption(strike=_t(100.0), expiry=_t(1.0), is_call=torch.tensor(True), fixing_times=_t([0.3, 0.7, 1.0]))
+    grid = MonteCarlo(steps=4)._times(asian, market)
+    assert torch.equal(grid, _t([0.0, 0.25, 0.3, 0.5, 0.7, 0.75, 1.0]))
+
+
+def test_asian_averages_fixing_dates_only_on_a_finer_grid():
+    from smallquant.instruments import AsianOption
+
+    fixings = _t([0.3, 0.7, 1.0])
+    times = _t([0.0, 0.25, 0.3, 0.5, 0.7, 0.75, 1.0])
+    paths = torch.linspace(90.0, 110.0, 4 * times.numel(), dtype=torch.float64).reshape(4, -1, 1)
+    on_fixings = paths[:, [0, 2, 4, 6], :]
+    for average in ("arithmetic", "geometric"):
+        option = AsianOption(
+            strike=_t(100.0), expiry=_t(1.0), is_call=torch.tensor(True), fixing_times=fixings, average=average
+        )
+        assert torch.equal(option.payoff(paths, times), option.payoff(on_fixings, _t([0.0, 0.3, 0.7, 1.0])))
+
+
+@pytest.mark.parametrize("steps", [4, 16])
+@pytest.mark.parametrize(("kind", "ql_kind", "barrier", "is_call"), [
+    ("down_out", ql.Barrier.DownOut, 90.0, True),
+    ("up_in", ql.Barrier.UpIn, 115.0, False),
+])
+def test_discrete_barrier_monitors_every_step(steps, kind, ql_kind, barrier, is_call):
+    """AT-30: a discrete barrier with ``steps=n`` is checked on n dates.
+
+    QuantLib's biased ``MCBarrierEngine`` checks the barrier only on its time
+    grid, so it prices the same contract. Both estimates use the same path count
+    with antithetics, so the difference is held to 3 combined standard errors.
+    """
+    from smallquant.engines.pricing import MonteCarlo
+    from smallquant.instruments import BarrierOption
+
+    market, params = _engine_market()
+    paths = 32768
+    option = BarrierOption(
+        strike=_t(100.0), expiry=_t(1.0), barrier=_t(barrier), is_call=torch.tensor(is_call), kind=kind
+    )
+    ours = MonteCarlo(num_paths=paths, steps=steps).price(option, params, market)
+
+    reference = ql.BarrierOption(
+        ql_kind,
+        barrier,
+        0.0,
+        ql.PlainVanillaPayoff(ql.Option.Call if is_call else ql.Option.Put, 100.0),
+        ql.EuropeanExercise(_date(365)),
+    )
+    reference.setPricingEngine(
+        ql.MCBarrierEngine(
+            _process(100.0, 0.05, 0.02, 0.3),
+            "pseudorandom",
+            timeSteps=steps,
+            brownianBridge=False,
+            antitheticVariate=True,
+            requiredSamples=paths,
+            isBiased=True,
+            seed=42,
+        )
+    )
+    _within_stderr(ours, reference.NPV(), math.sqrt(2.0) * reference.errorEstimate())
+
+
+def test_discrete_barrier_converges_to_continuous_monitoring():
+    """AT-30: knock-out prices fall towards the continuous closed form as steps grow."""
+    from smallquant.engines.pricing import Analytic, MonteCarlo
+    from smallquant.instruments import BarrierOption
+
+    market, params = _engine_market()
+
+    def option(monitoring):
+        return BarrierOption(
+            strike=_t(100.0),
+            expiry=_t(1.0),
+            barrier=_t(90.0),
+            is_call=torch.tensor(True),
+            kind="down_out",
+            monitoring=monitoring,
+        )
+
+    prices = [float(MonteCarlo(num_paths=65536, steps=steps).price(option("discrete"), params, market)) for steps in (4, 32, 256)]
+    continuous = float(Analytic().price(option("continuous"), params, market))
+    # Standard errors are about 0.05; the gaps between these step counts are several times larger.
+    assert prices[0] > prices[1] + 0.3 > prices[2] + 0.3 > continuous + 0.3
+
+
+def test_bermudan_on_expiry_only_is_european():
+    """An exercise grid of just the expiry gives no early exercise on a finer simulation grid."""
+    from smallquant.engines.pricing import MonteCarlo
+    from smallquant.instruments import AmericanOption
+
+    market, params = _engine_market()
+    flag = torch.tensor(False)
+    bermudan = AmericanOption(strike=_t(100.0), expiry=_t(1.0), is_call=flag, exercise_grid=_t([1.0]))
+    american = AmericanOption(strike=_t(100.0), expiry=_t(1.0), is_call=flag)
+    engine = MonteCarlo(num_paths=65536, steps=50)
+    closed = option_price(
+        spot=market.spot, strike=_t(100.0), expiry=_t(1.0), rate=market.rate, vol=params.vol, div=market.div, is_call=flag
+    )
+    # Discounted put payoff standard deviation is below 15, so the standard error is below 0.06.
+    assert abs(float(engine.price(bermudan, params, market)) - float(closed)) < 3 * 0.06
+    # Exercising on every step is worth more than the European put.
+    assert float(engine.price(american, params, market)) > float(closed) + 0.2

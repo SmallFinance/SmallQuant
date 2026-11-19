@@ -173,7 +173,7 @@ The table is the state at `fae8063`; the requirement sections carry the detail.
 | Implied vol | Newton (Brenner-Subrahmanyam start, implicit-function backward) and the Stefanica-Radoicic one-shot formula, lognormal and normal | `tol` is accepted but unused; no convergence mask is exposed (MTH-04); a grid round trip to 1e-10 (AT-09) |
 | Vol surfaces | SVI and SSVI as functions, `dupire_local_vol`, `svi_butterfly_ok`, `ssvi_calendar_ok` | SSVI butterfly and SVI calendar checks (VOL-06); Dupire's second strike derivative is not differentiable |
 | Math | Normal and bivariate normal distributions, masked `newton` and `brent` with implicit-function backward, interpolation, quadrature, tridiagonal and Cholesky helpers, pseudo-random and Sobol normals with a Brownian bridge | `newton` clamps the slope positive, which fails on decreasing functions (MTH-02); NaN for non-converged elements under validation (MTH-04); tests beyond the tridiagonal solver |
-| Engines | `Analytic`, `MonteCarlo`, `PDE`, `Fourier` and `Lattice`, dispatched through a registry keyed by (instrument type, params type) | **Defect:** Monte Carlo ignores `steps` whenever the instrument has an observation grid, and every grid is `[0, T]`, so European, digital, barrier and double-barrier runs simulate one step and discrete barriers are monitored only at 0 and T (MC-02). The engine does not expose Sobol, control variates or standard errors (MC-05, MC-06, MC-09) |
+| Engines | `Analytic`, `MonteCarlo`, `PDE`, `Fourier` and `Lattice`, dispatched through a registry keyed by (instrument type, params type). The Monte Carlo grid merges instrument dates with `steps` equal steps (MC-02, fixed after `fae8063`) | The engine does not expose Sobol, control variates or standard errors (MC-05, MC-06, MC-09); no maximum step size option |
 | American exercise | Longstaff-Schwartz in Monte Carlo, Crank-Nicolson with `max(value, payoff)` after each step, CRR tree, analytic approximations | Longstaff-Schwartz tests and the 2,000-step tree comparison (AT-16); a true projected step (PDE-02) |
 | Calibration | `calibrate` with L-BFGS, softplus, `tanh` and `(lo, hi)` bounds, and implicit-function sensitivities to quotes | `loss="vol_rmse"` computes the price RMSE; `iterations` always reports `max_iter`; no stop reason (CAL-01, CAL-04); Heston and SABR calibration tests (AT-17) |
 | Rates | `DiscountCurve`, `ZeroCurve`, closed-form `bootstrap`, `par_swap_rate`; Hull-White bond, zero-bond option, caplet, Jamshidian swaption and exact step | Caps and floors as sums, floorlets, a batched swaption, `HullWhiteParams` in the engines (RTS-03); Hull-White tests (AT-19); bucketed deltas against bumps (AT-18) |
@@ -445,8 +445,8 @@ instruments raise `NotImplementedError` from `payoff`.
 **INS-03 Build requirement.** Instruments declare their observation and exercise times so
 the Monte Carlo engine can merge them into its grid (MC-02), and declare the running
 statistics they need (running max, running sum, hit flag) so full paths need not be stored
-(MC-08). At `fae8063` instruments expose `observation_times` / `exercise_times`, but every
-grid is `[0, T]` and no running statistics are declared.
+(MC-08). Instruments expose `observation_times` / `exercise_times`, which the engine merges
+with its equal steps (MC-02). No running statistics are declared.
 
 **INS-04 Decided (in code, recorded 19 November 2026).** Barrier kinds are `down_in`,
 `down_out`, `up_in` and `up_out`; the `_and_` spellings (`"down_and_out"`) are accepted and
@@ -492,12 +492,17 @@ simulated in log space where the model allows, and keep a trailing `dim` of 1 fo
 models.
 
 **MC-02 Confirmed requirement.** The time grid is the sorted merge of instrument
-observation/exercise times with an optional maximum step size. **Defect at `fae8063`
-(release gate, QA-04):** `MonteCarlo._times` returns the instrument's observation grid
-whenever it has two or more points, and every instrument's grid is `[0, T]`, so `steps` is
-ignored. European, digital, barrier and double-barrier options, including Heston and local
-vol runs, simulate a single step, and a discretely monitored barrier is checked only at 0
-and T.
+observation/exercise times with an optional maximum step size. `MonteCarlo._times` merges
+the instrument's dates with `steps` equal steps to expiry, dropping an equal-step point
+within `1e-12 * expiry` of an instrument date. A discrete barrier is monitored on every grid
+date; an Asian with `fixing_times` averages on its fixing dates only; an American option
+with `exercise_grid` exercises on those dates only, and without one on every grid date. A
+maximum step size option is still to be added.
+
+Fixed after `fae8063`: the engine used to return the instrument's `[0, T]` grid and ignore
+`steps`, so every run simulated one step and a discrete barrier was checked only at 0 and
+T. The discrete barrier and double-barrier payoffs also raised `TypeError` (a Python `bool`
+passed to `torch.where`), so Monte Carlo could not price them at all. AT-30 covers both.
 
 **MC-03 Confirmed requirement.** Default schemes: exact lognormal (Black-Scholes), exact
 normal (Bachelier), exact step with Poisson jump counts (Merton), Andersen QE with
@@ -575,7 +580,8 @@ steps). Inputs broadcast, with tree nodes as a trailing dimension.
 
 **LSM-01 Confirmed requirement.** Longstaff-Schwartz in the Monte Carlo engine. The
 regression boundary is estimated, then held fixed under `torch.no_grad` when computing
-Greeks (envelope theorem).
+Greeks (envelope theorem). `exercise_index` takes an `exercisable` mask over the grid, so a
+Bermudan exercise grid is honoured on a finer simulation grid.
 
 **LSM-02 Decided (in code, recorded 19 November 2026).** Monomials `1, x, ..., x^degree` in
 spot with `degree=2`, fitted on in-the-money paths. The same paths fit the boundary and price
@@ -862,7 +868,7 @@ parametrisation; `gradcheck` appears in two files and `gradgradcheck` nowhere; t
 `torch.compile` test; `smallquant/models/hull_white.py` and `calibrate` with a real model
 have no tests. CUDA and MPS have not been exercised by the suite.
 
-Status is at `fae8063`: **met**, **partial** (what is missing is in section 4 or the
+Status is at `fae8063` except where a row says otherwise: **met**, **partial** (what is missing is in section 4 or the
 requirement) or **open**.
 
 | Test ID | Minimum acceptance scenario | Status |
@@ -895,7 +901,7 @@ requirement) or **open**.
 | AT-27 | Heston `european_option_price` matches QuantLib's `AnalyticHestonEngine` and the `Fourier` engine across short and long expiries. | Met |
 | AT-28 | `brownian_bridge_single` and `brownian_bridge_double` match fine-grid bridge simulation, converge in `n_cutoff`, stay in [0, 1], and agree with the survival probability in `payoffs.py`. | Met |
 | AT-29 | `variance_swap_fair_strike` matches QuantLib's `ReplicatingVarianceSwapEngine` without dividends, reproduces TF's worked example, and converges to sigma squared on a dense flat-vol strip. | Met |
-| AT-30 | A Monte Carlo discrete barrier with `steps=n` monitors at n dates: its price converges to the continuous closed form as n grows and matches QuantLib's `MCBarrierEngine` within 3 standard errors (MC-02 defect). | Open |
+| AT-30 | A Monte Carlo discrete barrier with `steps=n` monitors at n dates: its price converges to the continuous closed form as n grows and matches QuantLib's biased `MCBarrierEngine` within 3 combined standard errors (MC-02). | Met: `tests/engines/test_monte_carlo.py` |
 | AT-31 | Portfolio sensitivities (MKR-03) match `bump` central differences for every factor, including bucketed rate deltas. | Open |
 | AT-32 | Historical VaR and ES on a fixed P&L vector equal a NumPy reference under the MKR-05 convention; delta-normal VaR of a linear portfolio equals Monte Carlo VaR within 3 standard errors. | Open |
 | AT-33 | Euler component VaR and ES sum to the total; Taylor P&L explain leaves zero residual for a linear portfolio. | Open |
@@ -916,15 +922,13 @@ committing a date. Later phases remain in scope even though they are sequenced l
 | Phase | Concrete deliverables and exit evidence | Status at `fae8063` |
 | --- | --- | --- |
 | 0 Foundation | Installable package, CI on CPU, `ruff`, `conftest.py` device/dtype parametrisation; `_tensor.py`; `math/distributions` and `math/roots`; Black-Scholes limits on `_tensor.py`; Black76 and Bachelier; `sq.greeks`; `implied_vol`; package re-exports; MIT licence; changelog. Exit: AT-01–AT-10, AT-20–AT-23. Tag `0.1.0`. | Code done. Open: `conftest.py`, AT-07 and AT-20, and the partial exit tests |
-| 1 Monte Carlo | `math/random` with Sobol and Brownian bridge; instruments; `engines/monte_carlo` with antithetics, control variates, chunking and standard errors; exact Black-Scholes and Bachelier simulation; Merton jump; discontinuous-payoff Greeks. Exit: AT-12 (MC), AT-13–AT-15, AT-30. | Built with the MC-02 step-count defect; Sobol, control variates and standard errors not on the engine |
+| 1 Monte Carlo | `math/random` with Sobol and Brownian bridge; instruments; `engines/monte_carlo` with antithetics, control variates, chunking and standard errors; exact Black-Scholes and Bachelier simulation; Merton jump; discontinuous-payoff Greeks. Exit: AT-12 (MC), AT-13–AT-15, AT-30. | Built; Sobol, control variates and standard errors not on the engine |
 | 2 Stochastic vol and calibration | Heston characteristic function, Fourier engine and QE simulation; SABR; SVI/SSVI; `calibrate`. Exit: AT-11, AT-17. | Built; no Heston or SABR calibration test |
 | 3 PDE, lattices, early exercise | Tridiagonal solver; PDE engine; lattice engine; American options; Dupire local vol in Monte Carlo and PDE. Exit: AT-12 (all engines), AT-16. | Built; Longstaff-Schwartz untested, projected step approximate |
 | 4 Rates | Curves, differentiable bootstrap, Hull-White. Exit: AT-18, AT-19. | Built; Hull-White untested |
 | 5 Market risk | `sq.risk.market`: portfolio, risk factors, sensitivities, scenario revaluation, historical, parametric and Monte Carlo VaR and ES, stress tests, Euler attribution, P&L explain, backtesting (section 17A). Exit: AT-31–AT-34. | Not started |
 | 6 Credit risk | `sq.risk.credit`: survival curves, CDS and bootstrap, risky bonds, exposure simulation, netting and collateral, CVA and DVA, Vasicek portfolio loss (section 17B). Exit: AT-35–AT-37. | Not started |
 | Later | Multi-asset models, wrong-way risk, rating migration, multi-name credit (CRD-09), further calendars, documentation site. | — |
-
-The release gate (QA-04) blocks tagging any phase while the MC-02 defect is open.
 
 **DONE-01 Build requirement.** Each phase delivers version-controlled source, tests, updated
 docs, a changelog entry and a tagged release. CI is green on the tag.
@@ -992,7 +996,7 @@ table with its date.
 | Implied vol | `smallquant/black_scholes/implied_vol_lib.py` (`implied_vol`, `ImpliedVolMethod`), `implied_vol_newton_root.py`, `implied_vol_approximation.py` |
 | Exotics | `smallquant/exotics/*_prices.py`, one file per family |
 | Model dynamics | `smallquant/models/`: `geometric_brownian_motion.py`, `arithmetic_brownian_motion.py`, `heston/`, `sabr/`, `merton.py`, `cev.py`, `local_vol.py`, `hull_white.py`, `params.py` |
-| Instruments and engines | `smallquant/instruments.py`, `payoffs.py`, `market.py`, `price.py`; `engines/pricing.py` (engine classes and registries; `MonteCarlo._times` holds the MC-02 defect), `monte_carlo.py`, `finite_difference.py`, `fourier.py`, `longstaff.py` |
+| Instruments and engines | `smallquant/instruments.py`, `payoffs.py`, `market.py`, `price.py`; `engines/pricing.py` (engine classes and registries; `MonteCarlo._times` builds the MC-02 grid), `monte_carlo.py`, `finite_difference.py`, `fourier.py`, `longstaff.py` |
 | Math | `smallquant/math/`: `distributions.py`, `roots.py`, `interp.py`, `quadrature.py`, `tridiagonal.py`, `linalg.py`, `random.py` |
 | Greeks, surfaces, calibration | `smallquant/greeks.py`, `vol/surface.py`, `calibration.py` |
 | Rates | `smallquant/rates/curve.py`, `bootstrap.py`; `models/hull_white.py` |

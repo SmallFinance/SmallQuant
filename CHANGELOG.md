@@ -16,8 +16,13 @@ versioning; breaking changes before 1.0 are allowed and listed under their relea
 
 - Unused local variables and imports reported by ruff. No behaviour changes.
 
-### Known issues
+### Fixed
 
-- Monte Carlo ignores `steps` for instruments with an observation grid, so European,
-  digital and barrier runs simulate one step and discrete barriers are monitored only at
-  0 and T (spec MC-02). This blocks the 0.1.0 tag.
+- Monte Carlo honours `steps`: the time grid merges the instrument's dates with `steps`
+  equal steps (spec MC-02). Before, every run simulated one step and a discrete barrier
+  was checked only at 0 and expiry.
+- Monte Carlo prices discrete single and double barriers; their payoffs raised `TypeError`.
+- An Asian option with `fixing_times` averages on its fixing dates only, and an American
+  option with `exercise_grid` exercises on those dates only, when the simulation grid is
+  finer. An American option without `exercise_grid` now exercises on every step; before,
+  its grid was `[0, T]`, so it priced as a European.
