@@ -93,7 +93,12 @@ method has been prototyped.
 **PRD-01 Confirmed requirement.** SmallQuant is the maintained, PyTorch-native equivalent of
 Google's archived TF Quant Finance. Every price is a tensor computation, so Greeks of any
 order are exact derivatives from autograd, and the same code runs batched on CPU, CUDA and
-Apple MPS.
+Apple MPS. The batch is the unit of work. A call on a tensor of options, scenarios or
+calibration quotes is one data-parallel evaluation of every element together. Typical CPU
+pricing code loops over contracts in Python and prices one at a time; SmallQuant does not.
+On a GPU the elements of each kernel run together; on a CPU they are one vectorised loop.
+Iterations (Newton, time steps, tree steps) advance the algorithm, and each step updates
+the whole batch.
 
 **PRD-02 Confirmed requirement.** Accuracy comes first, speed second. `float64` is the
 default. Speed comes from batching, GPUs and `torch.compile`, never from silently dropping
@@ -140,7 +145,7 @@ still excludes trade stores and market-data connectors.
 | Licence | MIT (decision D01, 19 November 2026). Code copied from another library must carry a compatible licence; copyleft and non-commercial sources are test references only (Appendix E). |
 | Risk | Market and credit risk numbers are computed by revaluing through the pricing engines and differentiating with autograd, never by a separate approximate pricer (sections 17A, 17B). |
 | Default dtype | `float64`. MPS falls back to `float32` with a one-time warning. |
-| Batching | Every public function broadcasts its tensor inputs. No Python loops over batch elements. |
+| Batching | Every public function broadcasts its tensor inputs and evaluates the whole batch in tensor operations. No Python loop over options, scenarios or other batch elements. Loops iterate the algorithm; each iteration updates every element (PRD-01). |
 | Device | Outputs live on the inputs' device. Mixed devices raise; nothing is copied silently. |
 | Branching | No Python `if` on tensor values. Use `torch.where`, and mask inputs before unsafe operations. |
 | Greeks | Autograd, never bump-and-reprice. `greeks.bump` exists for checking only. |
@@ -213,7 +218,11 @@ record the hardware and the result.
 library does not accept raw Python numbers (`float`, `int`), NumPy scalars/arrays, or other
 array-likes on the public surface; callers pass tensors. Non-numeric flags such as
 `is_call` may remain `bool` or a bool tensor. All tensor arguments broadcast under PyTorch
-rules and the output shape is the broadcast shape.
+rules and the output shape is the broadcast shape. A tensor of shape `(N,)` is `N` cases in
+one call (PRD-01): the body applies elementwise tensor operations, and `torch.where` for
+branches, to that whole tensor. It does not iterate `N` in Python. Elements that skip a
+formula still travel through the same operations on masked inputs, so the batch stays one
+launch.
 
 **TEN-02 Confirmed requirement.** dtype resolution order: the `dtype=` argument if given,
 otherwise the highest floating dtype among tensor inputs, otherwise `float64`.
