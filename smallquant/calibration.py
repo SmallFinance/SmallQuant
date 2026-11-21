@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, fields, replace
+from typing import TypeVar
 
 import torch
 
 from smallquant._tensor import align
+
+_P = TypeVar("_P")
+Bound = str | tuple[float, float]
 
 
 @dataclass
@@ -19,16 +24,16 @@ class CalibrationResult:
 
 
 def calibrate(
-    model_params,
-    market_quotes,
-    pricer,
+    model_params: _P,
+    market_quotes: torch.Tensor,
+    pricer: Callable[[_P], torch.Tensor],
     *,
-    loss="vol_rmse",
-    optimizer="lbfgs",
-    bounds=None,
-    max_iter=200,
-    tol=1e-8,
-):
+    loss: str = "vol_rmse",
+    optimizer: str = "lbfgs",
+    bounds: dict[str, Bound] | None = None,
+    max_iter: int = 200,
+    tol: float = 1e-8,
+) -> CalibrationResult:
     """Fit ``model_params`` to ``market_quotes``.
 
     ``pricer(params)`` returns a tensor shaped like ``market_quotes``.
@@ -55,7 +60,7 @@ def calibrate(
         raw0.append(_to_unconstrained(getattr(model_params, name).detach().reshape(-1), bounds.get(name)))
     raw = torch.nn.Parameter(torch.cat(raw0))
 
-    def rebuild(vector):
+    def rebuild(vector: torch.Tensor) -> _P:
         pieces = {}
         cursor = 0
         for name in names:
@@ -66,7 +71,7 @@ def calibrate(
             cursor += count
         return replace(model_params, **pieces)
 
-    def objective(vector):
+    def objective(vector: torch.Tensor) -> torch.Tensor:
         model = pricer(rebuild(vector))
         error = model - quotes
         mse = (error * error).mean()
@@ -79,7 +84,7 @@ def calibrate(
     )
     iterations = max_iter
 
-    def closure():
+    def closure() -> torch.Tensor:
         opt.zero_grad()
         value = objective(raw)
         value.backward()
@@ -100,7 +105,7 @@ def calibrate(
     )
 
 
-def _to_unconstrained(value, bound):
+def _to_unconstrained(value: torch.Tensor, bound: Bound | None) -> torch.Tensor:
     if bound == "positive":
         return torch.log(torch.expm1(value.clamp(min=1e-8)))
     if bound == "correlation":
@@ -112,7 +117,7 @@ def _to_unconstrained(value, bound):
     return value
 
 
-def _from_unconstrained(value, bound):
+def _from_unconstrained(value: torch.Tensor, bound: Bound | None) -> torch.Tensor:
     if bound == "positive":
         return torch.nn.functional.softplus(value)
     if bound == "correlation":
@@ -124,11 +129,18 @@ def _from_unconstrained(value, bound):
     return value
 
 
-def _attach_sensitivity(fitted, names, bounds, quotes, pricer, raw_star):
+def _attach_sensitivity(
+    fitted: _P,
+    names: list[str],
+    bounds: dict[str, Bound],
+    quotes: torch.Tensor,
+    pricer: Callable[[_P], torch.Tensor],
+    raw_star: torch.Tensor,
+) -> _P:
     """theta(quotes) ≈ theta* - H^{-1} cross @ (quotes - quotes*)."""
     raw_star = raw_star.detach()
 
-    def loss_of(raw_vector, quote_vector):
+    def loss_of(raw_vector: torch.Tensor, quote_vector: torch.Tensor) -> torch.Tensor:
         pieces = {}
         cursor = 0
         for name in names:

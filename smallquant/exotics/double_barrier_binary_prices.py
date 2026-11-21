@@ -40,7 +40,7 @@ def price(
     return _kiko(spot, barrier_lo, barrier_hi, expiry, rate, div, cash, variance, kind, 999)
 
 
-def _series(spot, lower, upper, expiry, rate, div, cash, variance, kind, terms):
+def _series(spot: torch.Tensor, lower: torch.Tensor, upper: torch.Tensor, expiry: torch.Tensor, rate: torch.Tensor, div: torch.Tensor, cash: torch.Tensor, variance: torch.Tensor, kind: torch.Tensor, terms: torch.Tensor) -> torch.Tensor:
     sigma2 = variance / expiry
     carry = rate - div
     alpha = -0.5 * (2.0 * carry / sigma2 - 1.0)
@@ -60,7 +60,7 @@ def _series(spot, lower, upper, expiry, rate, div, cash, variance, kind, terms):
     return torch.clamp(cash * torch.exp(-rate * expiry) - total, min=0.0)
 
 
-def _kiko(spot, lower, upper, expiry, rate, div, cash, variance, kind, terms):
+def _kiko(spot: torch.Tensor, lower: torch.Tensor, upper: torch.Tensor, expiry: torch.Tensor, rate: torch.Tensor, div: torch.Tensor, cash: torch.Tensor, variance: torch.Tensor, kind: torch.Tensor, terms: torch.Tensor) -> torch.Tensor:
     if kind == "koki":
         lower, upper = upper, lower
     sigma2 = variance / expiry

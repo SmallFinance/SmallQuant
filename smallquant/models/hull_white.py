@@ -10,9 +10,17 @@ import torch
 
 from smallquant._tensor import align
 from smallquant.math.distributions import normal_cdf
+from smallquant.rates.curve import DiscountCurve
 
 
-def bond_price(curve, short_rate, a, sigma, now, maturity):
+def bond_price(
+    curve: DiscountCurve,
+    short_rate: torch.Tensor,
+    a: torch.Tensor,
+    sigma: torch.Tensor,
+    now: torch.Tensor,
+    maturity: torch.Tensor,
+) -> torch.Tensor:
     """Zero bond ``P(now, maturity)`` given the short rate at ``now``."""
     short_rate, a, sigma, now, maturity = align(short_rate, a, sigma, now, maturity, curve.times)[:5]
     b = _b(a, now, maturity)
@@ -20,7 +28,16 @@ def bond_price(curve, short_rate, a, sigma, now, maturity):
     return torch.exp(log_a - b * short_rate)
 
 
-def zero_bond_option(curve, a, sigma, expiry, maturity, strike, *, is_call=True):
+def zero_bond_option(
+    curve: DiscountCurve,
+    a: torch.Tensor,
+    sigma: torch.Tensor,
+    expiry: torch.Tensor,
+    maturity: torch.Tensor,
+    strike: torch.Tensor,
+    *,
+    is_call: torch.Tensor | bool = True,
+) -> torch.Tensor:
     """European option on a zero bond, paid at ``expiry``."""
     a, sigma, expiry, maturity, strike = align(a, sigma, expiry, maturity, strike, curve.times)[:5]
     sigma_p = _bond_volatility(a, sigma, expiry, maturity)
@@ -35,7 +52,14 @@ def zero_bond_option(curve, a, sigma, expiry, maturity, strike, *, is_call=True)
     return torch.where(sigma_p > 1e-10, price, intrinsic)
 
 
-def caplet(curve, a, sigma, start, end, strike):
+def caplet(
+    curve: DiscountCurve,
+    a: torch.Tensor,
+    sigma: torch.Tensor,
+    start: torch.Tensor,
+    end: torch.Tensor,
+    strike: torch.Tensor,
+) -> torch.Tensor:
     """Caplet paying ``(end-start) * max(L-strike, 0)`` at ``end``.
 
     ``L`` is the simply compounded forward from ``start`` to ``end``.
@@ -48,7 +72,17 @@ def caplet(curve, a, sigma, start, end, strike):
     return (1.0 + delta * strike) * put
 
 
-def swaption(curve, a, sigma, expiry, pay_times, deltas, strike, *, is_payer=True):
+def swaption(
+    curve: DiscountCurve,
+    a: torch.Tensor,
+    sigma: torch.Tensor,
+    expiry: torch.Tensor,
+    pay_times: torch.Tensor,
+    deltas: torch.Tensor,
+    strike: torch.Tensor,
+    *,
+    is_payer: bool = True,
+) -> torch.Tensor:
     """Jamshidian decomposition of a European payer or receiver swaption.
 
     ``pay_times`` are the fixed payment times after ``expiry``. ``deltas`` are
@@ -68,7 +102,15 @@ def swaption(curve, a, sigma, expiry, pay_times, deltas, strike, *, is_payer=Tru
     return pieces.sum()
 
 
-def step(*, short_rate, times, normals, a, sigma, curve):
+def step(
+    *,
+    short_rate: torch.Tensor,
+    times: torch.Tensor,
+    normals: torch.Tensor,
+    a: torch.Tensor,
+    sigma: torch.Tensor,
+    curve: DiscountCurve,
+) -> torch.Tensor:
     """Exact Gaussian short-rate and integrated-rate paths.
 
     The result has shape ``[num_paths, num_steps + 1, 2]``. Column 0 is the
@@ -94,32 +136,48 @@ def step(*, short_rate, times, normals, a, sigma, curve):
     return torch.stack((torch.stack(rates, dim=1), torch.stack(integrals, dim=1)), dim=-1)
 
 
-def _b(a, start, end):
+def _b(a: torch.Tensor, start: torch.Tensor, end: torch.Tensor) -> torch.Tensor:
     dt = end - start
     return torch.where(a.abs() < 1e-8, dt, (1.0 - torch.exp(-a * dt)) / a)
 
 
-def _instantaneous_forward(curve, t):
+def _instantaneous_forward(curve: DiscountCurve, t: torch.Tensor) -> torch.Tensor:
     bump = torch.full_like(t, 1e-4)
     return curve.forward_rate(t, t + bump)
 
 
-def _log_a(curve, a, sigma, now, maturity, b):
+def _log_a(
+    curve: DiscountCurve,
+    a: torch.Tensor,
+    sigma: torch.Tensor,
+    now: torch.Tensor,
+    maturity: torch.Tensor,
+    b: torch.Tensor,
+) -> torch.Tensor:
     df_ratio = torch.log(curve.discount(maturity).clamp(min=1e-18) / curve.discount(now).clamp(min=1e-18))
     forward = _instantaneous_forward(curve, now)
     variance = (sigma**2) / (4.0 * a.clamp(min=1e-8)) * (1.0 - torch.exp(-2.0 * a * now)) * b**2
     return df_ratio + b * forward - variance
 
 
-def _bond_volatility(a, sigma, expiry, maturity):
+def _bond_volatility(
+    a: torch.Tensor, sigma: torch.Tensor, expiry: torch.Tensor, maturity: torch.Tensor
+) -> torch.Tensor:
     b = _b(a, expiry, maturity)
     return sigma * torch.sqrt((1.0 - torch.exp(-2.0 * a * expiry)) / (2.0 * a.clamp(min=1e-8))) * b
 
 
-def _critical_rate(curve, a, sigma, expiry, pay_times, coupon):
+def _critical_rate(
+    curve: DiscountCurve,
+    a: torch.Tensor,
+    sigma: torch.Tensor,
+    expiry: torch.Tensor,
+    pay_times: torch.Tensor,
+    coupon: torch.Tensor,
+) -> torch.Tensor:
     """Short rate that makes the coupon bond worth par at expiry."""
 
-    def value(rate):
+    def value(rate: torch.Tensor) -> torch.Tensor:
         return (coupon * bond_price(curve, rate, a, sigma, expiry, pay_times)).sum() - 1.0
 
     lo = expiry.new_tensor(-1.0)
@@ -133,12 +191,21 @@ def _critical_rate(curve, a, sigma, expiry, pay_times, coupon):
     return 0.5 * (lo + hi)
 
 
-def _mean_rate(curve, a, sigma, t):
+def _mean_rate(curve: DiscountCurve, a: torch.Tensor, sigma: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
     forward = _instantaneous_forward(curve, t)
     return forward + (sigma**2) / (2.0 * a.clamp(min=1e-8) ** 2) * (1.0 - torch.exp(-a * t)) ** 2
 
 
-def _transition(rate, start, end, a, sigma, curve, z_rate, z_orth):
+def _transition(
+    rate: torch.Tensor,
+    start: torch.Tensor,
+    end: torch.Tensor,
+    a: torch.Tensor,
+    sigma: torch.Tensor,
+    curve: DiscountCurve,
+    z_rate: torch.Tensor,
+    z_orth: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     dt = end - start
     decay = torch.exp(-a * dt)
     mean = rate * decay + _mean_rate(curve, a, sigma, end) - _mean_rate(curve, a, sigma, start) * decay

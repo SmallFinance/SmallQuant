@@ -175,7 +175,7 @@ The table is the state at `fae8063`; the requirement sections carry the detail.
 | Tensor contract | `_tensor.align` rejects non-tensors with `TypeError`, promotes to the widest float, honours `dtype=`, falls back to `float32` on MPS with one warning, and rejects mixed devices | Bare `torch.tensor` constants remain (TEN-05); `barrier_price` is not masked (TEN-06); device and dtype tests (AT-02, AT-03) |
 | Closed forms | `option_price` for Black-Scholes-Merton, Black-76 and Bachelier; binary, asset-or-nothing and single-barrier prices; about 20 exotic families in `exotics/`; Merton series; SABR (Hagan); Heston (Attari); Barone-Adesi-Whaley and Bjerksund-Stensland; variance swaps | Greeks tests for Black-76, Bachelier and binaries (AT-06); no-arbitrage property tests (AT-07); citations in barrier, CEV, SSVI and Hull-White code (MOD-09) |
 | Greeks | `first_order`, `second_order`, `jacobian`, `bump` | Named-Greek helpers (GRK-05); a `jacobian` test; the zero-delta warning on barriers (GRK-07) |
-| Implied vol | Newton (Brenner-Subrahmanyam start, implicit-function backward) and the Stefanica-Radoicic one-shot formula, lognormal and normal | `tol` is accepted but unused; no convergence mask is exposed (MTH-04); a grid round trip to 1e-10 (AT-09) |
+| Implied vol | Newton (Brenner-Subrahmanyam start, implicit-function backward) and the Stefanica-Radoicic one-shot formula, lognormal and normal | No convergence mask is exposed (MTH-04); a grid round trip to 1e-10 (AT-09) |
 | Vol surfaces | SVI and SSVI as functions, `dupire_local_vol`, `svi_butterfly_ok`, `ssvi_calendar_ok` | SSVI butterfly and SVI calendar checks (VOL-06); Dupire's second strike derivative is not differentiable |
 | Math | Normal and bivariate normal distributions, masked `newton` and `brent` with implicit-function backward, interpolation, quadrature, tridiagonal and Cholesky helpers, pseudo-random and Sobol normals with a Brownian bridge | `newton` clamps the slope positive, which fails on decreasing functions (MTH-02); NaN for non-converged elements under validation (MTH-04); tests beyond the tridiagonal solver |
 | Engines | `Analytic`, `MonteCarlo`, `PDE`, `Fourier` and `Lattice`, dispatched through a registry keyed by (instrument type, params type). The Monte Carlo grid merges instrument dates with `steps` equal steps (MC-02, fixed after `fae8063`) | The engine does not expose Sobol, control variates or standard errors (MC-05, MC-06, MC-09); no maximum step size option |
@@ -265,13 +265,14 @@ tails. `normal_cdf` uses `erfc` for negative arguments so deep out-of-the-money 
 relative accuracy. The functions live in `sq.math.distributions`; they are not re-exported
 from `sq.math`.
 
-**MTH-02 Confirmed requirement.** `roots.newton(residual, x0, params, *, tol=1e-12,
-max_iter=50)` and `roots.brent(residual, lo, hi, params, *, tol=1e-12, max_iter=100)` are
+**MTH-02 Confirmed requirement.** `roots.newton(residual, x0, params, *, tol=None,
+max_iter=50)` and `roots.brent(residual, lo, hi, params, *, tol=None, max_iter=100)` are
 batched, run a fixed maximum iteration count with a convergence mask, and never sync to the
-host inside the loop. `params` carries the tensors the implicit-function backward
-differentiates. `brent` is bisection with a Newton trial step, not Brent's method; the name
-stays. Defect at `fae8063`: `newton` clamps the slope to at least 1e-14, so it fails on
-decreasing residuals.
+host inside the loop. `tol` is a tensor broadcast with the unknown, or `None` for `1e-12`
+on every element. An element holds its value once its residual is within its own `tol`.
+`params` carries the tensors the implicit-function backward differentiates. `brent` is
+bisection with a Newton trial step, not Brent's method; the name stays. Defect at
+`fae8063`: `newton` clamps the slope to at least 1e-14, so it fails on decreasing residuals.
 
 **MTH-03 Confirmed requirement.** Root results are differentiable through the implicit
 function theorem: one backward step at the solution, `dx/dθ = -(∂g/∂x)⁻¹ · ∂g/∂θ`.
@@ -279,8 +280,8 @@ function theorem: one backward step at the solution, `dx/dθ = -(∂g/∂x)⁻¹
 **MTH-04 Build requirement.** Roots return `(root, converged)` so callers can detect
 non-converged elements without a host sync (done). Non-converged elements return NaN only
 when validation is on; otherwise the last iterate, documented as such (not done).
-`implied_vol` computes a convergence mask and discards it; it should honour `tol` and expose
-the mask.
+`implied_vol` honours a per-element `tol` and computes a convergence mask it discards; it
+should expose the mask.
 
 **MTH-05 Confirmed requirement.** Interpolation: `linear`, `log_linear`, `monotone_cubic`
 and natural cubic spline; differentiable with respect to both `x` and the node values `fp`.
@@ -401,8 +402,10 @@ exactly, with no unrolled graph.
 is_call=True, spot=None, forward=None, rate=None, div=None, discount=None,
 underlying_distribution=UnderlyingDistribution.LOGNORMAL,
 method=ImpliedVolMethod.NEWTON, tol=None, max_iter=50, dtype=None)` solves a whole chain in
-one call. Inputs follow `option_price` (MOD-04); `underlying_distribution=NORMAL` gives
-Bachelier volatility. Defect at `fae8063`: `tol` is passed to the solver and ignored.
+one call. `tol` is a tensor broadcast with the chain, or `None` for `1e-12` (lognormal) or
+`1e-10` (normal) on every element. Each element holds its volatility once its price error
+is within its own `tol`. Inputs follow `option_price` (MOD-04);
+`underlying_distribution=NORMAL` gives Bachelier volatility.
 
 **VOL-02 Confirmed requirement.** `method=NEWTON` (default): rational initial guess, then
 Newton safeguarded by bisection, under the fixed-iteration masked loop of MTH-02.

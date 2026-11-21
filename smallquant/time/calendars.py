@@ -64,7 +64,7 @@ class TARGET(WesternCalendar):
 class BespokeCalendar(Calendar):
     """Calendar with a custom name and weekend set; holidays via `add_holiday`."""
 
-    def __init__(self, name: str = ""):
+    def __init__(self, name: str  = "") -> None:
         super().__init__()
         self._name = name
         self._weekend_mask = 0
@@ -89,8 +89,8 @@ class JointCalendar(Calendar):
     def __init__(
         self,
         *calendars: Calendar,
-        rule: JointCalendarRule = JointCalendarRule.JoinHolidays,
-    ):
+        rule: JointCalendarRule  = JointCalendarRule.JoinHolidays,
+    ) -> None:
         super().__init__()
         if len(calendars) < 2:
             raise ValueError("JointCalendar needs at least two calendars")
@@ -186,7 +186,7 @@ class UnitedStates(WesternCalendar):
         FederalReserve = "federal reserve"
         SOFR = "sofr"
 
-    def __init__(self, market: Market = Market.Settlement):
+    def __init__(self, market: Market  = Market.Settlement) -> None:
         super().__init__()
         self._market = UnitedStates.Market(market)
 
@@ -409,7 +409,7 @@ class UnitedKingdom(WesternCalendar):
         Exchange = "exchange"
         Metals = "metals"
 
-    def __init__(self, market: Market = Market.Settlement):
+    def __init__(self, market: Market  = Market.Settlement) -> None:
         super().__init__()
         self._market = UnitedKingdom.Market(market)
 
@@ -555,7 +555,7 @@ class Australia(WesternCalendar):
         Settlement = "settlement"
         ASX = "asx"
 
-    def __init__(self, market: Market = Market.Settlement):
+    def __init__(self, market: Market  = Market.Settlement) -> None:
         super().__init__()
         self._market = market
 

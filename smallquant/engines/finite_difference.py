@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
 
-from smallquant._tensor import align
+from smallquant._tensor import align, check
 
 from ..math.tridiagonal import solve as solve_tridiagonal
 
@@ -21,17 +23,19 @@ def price(
     exercise: str = "european",
     num_space: int = 400,
     num_time: int = 400,
-    theta: float = 0.5,
+    theta: torch.Tensor | None = None,
     rannacher_steps: int = 2,
-    grid_scale: float = 6.0,
+    grid_scale: torch.Tensor | None = None,
     barrier: torch.Tensor | None = None,
     barrier_kind: str | None = None,
     rebate: torch.Tensor | None = None,
-    local_vol=None,
+    local_vol: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None = None,
 ) -> torch.Tensor:
     """Crank-Nicolson price on a log-spot grid concentrated at the strike.
 
-    ``theta=0.5`` is Crank-Nicolson and ``theta=1`` is fully implicit. The first
+    ``theta`` is a tensor broadcast with the batch, or ``None`` for ``0.5``
+    (Crank-Nicolson); ``1`` is fully implicit. ``grid_scale`` likewise, or
+    ``None`` for ``6``. The first
     ``rannacher_steps`` are forced to fully implicit Euler (Rannacher 1984) so a
     kink in the expiry payoff does not pollute the convergence. The price at
     ``spot`` is read from a natural cubic spline, so delta and gamma from
@@ -42,6 +46,10 @@ def price(
     """
     if exercise not in ("european", "american"):
         raise ValueError("exercise must be 'european' or 'american'")
+    spot, strike, expiry, rate, vol, div = align(spot, strike, expiry, rate, vol, div)
+    theta = torch.full_like(spot, 0.5) if theta is None else align(theta, spot)[0]
+    grid_scale = torch.full_like(spot, 6.0) if grid_scale is None else align(grid_scale, spot)[0]
+    check("theta", theta, (theta >= 0) & (theta <= 1))
     if barrier is not None or local_vol is not None:
         return _with_barrier_or_local_vol(
             spot=spot,
@@ -64,15 +72,13 @@ def price(
         )
     if num_space < 8 or num_time < 1:
         raise ValueError("num_space must be at least 8 and num_time at least 1")
-    if not 0.0 <= theta <= 1.0:
-        raise ValueError("theta must lie in [0, 1]")
-    spot, strike, expiry, rate, vol, div = align(spot, strike, expiry, rate, vol, div)
     batch_shape = torch.broadcast_shapes(
-        spot.shape, strike.shape, expiry.shape, rate.shape, vol.shape, div.shape, is_call.shape
+        spot.shape, strike.shape, expiry.shape, rate.shape, vol.shape, div.shape, is_call.shape,
+        theta.shape, grid_scale.shape,
     )
-    spot, strike, expiry, rate, vol, div, is_call = (
+    spot, strike, expiry, rate, vol, div, is_call, theta, grid_scale = (
         tensor.expand(batch_shape).reshape(-1)
-        for tensor in (spot, strike, expiry, rate, vol, div, is_call)
+        for tensor in (spot, strike, expiry, rate, vol, div, is_call, theta, grid_scale)
     )
     intrinsic = torch.where(is_call, torch.relu(spot - strike), torch.relu(strike - spot))
     safe_expiry = torch.where(expiry <= 0, torch.ones_like(expiry), expiry)
@@ -88,18 +94,25 @@ def price(
     step = safe_expiry[:, None] / num_time
     for index in range(num_time):
         remaining = step * (index + 1)
-        step_theta = 1.0 if index < rannacher_steps else theta
+        step_theta = torch.ones_like(theta) if index < rannacher_steps else theta
         boundary = _boundary(log_spot, strike, rate, div, remaining, is_call, exercise)
-        values = _theta_step(values, lower, diag, upper, step, step_theta, boundary)
+        values = _theta_step(values, lower, diag, upper, step, step_theta[:, None], boundary)
         if exercise == "american":
             values = torch.maximum(values, payoff)
     solved = _spline(log_spot, values, torch.log(spot))
     return torch.where(expiry <= 0, intrinsic, solved).reshape(batch_shape)
 
 
-def _log_grid(strike, spot, expiry, vol, num_space: int, grid_scale: float) -> torch.Tensor:
+def _log_grid(
+    strike: torch.Tensor,
+    spot: torch.Tensor,
+    expiry: torch.Tensor,
+    vol: torch.Tensor,
+    num_space: int,
+    grid_scale: torch.Tensor,
+) -> torch.Tensor:
     center = torch.log(strike)[:, None]
-    width = grid_scale * vol[:, None] * torch.sqrt(expiry[:, None])
+    width = grid_scale[:, None] * vol[:, None] * torch.sqrt(expiry[:, None])
     reach = (torch.log(spot) - torch.log(strike)).abs()[:, None] + 0.5
     half = torch.maximum(width, reach)
     density = torch.clamp(half / 8.0, min=1e-3)
@@ -110,7 +123,7 @@ def _log_grid(strike, spot, expiry, vol, num_space: int, grid_scale: float) -> t
     return center + density * torch.sinh(coordinate)
 
 
-def _spatial(log_spot, rate, vol, div):
+def _spatial(log_spot: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     drift = (rate - div - 0.5 * vol * vol)[:, None]
     diffusion = (0.5 * vol * vol)[:, None]
     spacing = log_spot[:, 1:] - log_spot[:, :-1]
@@ -129,7 +142,7 @@ def _spatial(log_spot, rate, vol, div):
     return lower, diag, upper
 
 
-def _boundary(log_spot, strike, rate, div, remaining, is_call, exercise: str) -> torch.Tensor:
+def _boundary(log_spot: torch.Tensor, strike: torch.Tensor, rate: torch.Tensor, div: torch.Tensor, remaining: torch.Tensor, is_call: torch.Tensor, exercise: str) -> torch.Tensor:
     low = torch.exp(log_spot[:, :1])
     high = torch.exp(log_spot[:, -1:])
     strike = strike[:, None]
@@ -146,7 +159,15 @@ def _boundary(log_spot, strike, rate, div, remaining, is_call, exercise: str) ->
     return torch.cat((lower, upper), dim=-1)
 
 
-def _theta_step(values, lower, diag, upper, step, theta: float, boundary):
+def _theta_step(
+    values: torch.Tensor,
+    lower: torch.Tensor,
+    diag: torch.Tensor,
+    upper: torch.Tensor,
+    step: torch.Tensor,
+    theta: torch.Tensor,
+    boundary: torch.Tensor,
+) -> torch.Tensor:
     explicit = (
         (1.0 - theta) * step * lower * values[:, :-2]
         + (1.0 + (1.0 - theta) * step * diag) * values[:, 1:-1]
@@ -164,7 +185,7 @@ def _theta_step(values, lower, diag, upper, step, theta: float, boundary):
     return torch.cat((boundary[:, :1], interior, boundary[:, 1:]), dim=-1)
 
 
-def _spline(nodes, values, query):
+def _spline(nodes: torch.Tensor, values: torch.Tensor, query: torch.Tensor) -> torch.Tensor:
     spacing = nodes[:, 1:] - nodes[:, :-1]
     slope = (values[:, 1:] - values[:, :-1]) / spacing
     left = spacing[:, :-1]
@@ -182,7 +203,7 @@ def _spline(nodes, values, query):
     index = (query[:, None] >= nodes).sum(dim=-1) - 1
     index = index.clamp(0, nodes.shape[-1] - 2)
 
-    def take(grid):
+    def take(grid: torch.Tensor) -> torch.Tensor:
         return grid.gather(-1, index[:, None]).squeeze(-1)
 
     next_index = (index + 1)[:, None]
@@ -206,24 +227,24 @@ def _spline(nodes, values, query):
 
 def _with_barrier_or_local_vol(
     *,
-    spot,
-    strike,
-    expiry,
-    rate,
-    vol,
-    div,
-    is_call,
-    exercise,
-    num_space,
-    num_time,
-    theta,
-    rannacher_steps,
-    grid_scale,
-    barrier,
-    barrier_kind,
-    rebate,
-    local_vol,
-):
+    spot: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    vol: torch.Tensor,
+    div: torch.Tensor,
+    is_call: torch.Tensor,
+    exercise: str,
+    num_space: int,
+    num_time: int,
+    theta: torch.Tensor,
+    rannacher_steps: int,
+    grid_scale: torch.Tensor,
+    barrier: torch.Tensor | None,
+    barrier_kind: str | None,
+    rebate: torch.Tensor | None,
+    local_vol: Callable[[torch.Tensor], torch.Tensor] | None,
+) -> torch.Tensor:
     """Crank-Nicolson with a Dirichlet barrier and an optional local volatility."""
     spot, strike, expiry, rate, vol, div = align(spot, strike, expiry, rate, vol, div)
     kind = None if barrier_kind is None else barrier_kind.replace("_and_", "_")
@@ -265,8 +286,13 @@ def _with_barrier_or_local_vol(
             local_vol=local_vol,
         )
         return vanilla - knocked_out
-    batch_shape = torch.broadcast_shapes(spot.shape, strike.shape, expiry.shape, rate.shape, vol.shape, div.shape)
-    spot, strike, expiry, rate, vol, div = (tensor.expand(batch_shape).reshape(-1) for tensor in (spot, strike, expiry, rate, vol, div))
+    batch_shape = torch.broadcast_shapes(
+        spot.shape, strike.shape, expiry.shape, rate.shape, vol.shape, div.shape, theta.shape, grid_scale.shape
+    )
+    spot, strike, expiry, rate, vol, div, theta, grid_scale = (
+        tensor.expand(batch_shape).reshape(-1)
+        for tensor in (spot, strike, expiry, rate, vol, div, theta, grid_scale)
+    )
     is_call = is_call.expand(batch_shape).reshape(-1)
     safe_expiry = torch.where(expiry <= 0, torch.ones_like(expiry), expiry)
     log_spot = _log_grid(strike, spot.detach(), safe_expiry, vol, num_space, grid_scale)
@@ -283,9 +309,9 @@ def _with_barrier_or_local_vol(
             elapsed = safe_expiry - remaining[:, 0]
             node_vol = local_vol(spots, elapsed)
             lower, diag, upper = _spatial_nodes(log_spot, rate, node_vol, div)
-        step_theta = 1.0 if index < rannacher_steps else theta
+        step_theta = torch.ones_like(theta) if index < rannacher_steps else theta
         boundary = _boundary(log_spot, strike, rate, div, remaining, is_call, exercise)
-        values = _theta_step(values, lower, diag, upper, step, step_theta, boundary)
+        values = _theta_step(values, lower, diag, upper, step, step_theta[:, None], boundary)
         if barrier is not None:
             level = align(barrier, spot)[0]
             if kind == "down_out":
@@ -299,7 +325,7 @@ def _with_barrier_or_local_vol(
     return torch.where(expiry <= 0, intrinsic, solved).reshape(batch_shape)
 
 
-def _spatial_nodes(log_spot, rate, vol_nodes, div):
+def _spatial_nodes(log_spot: torch.Tensor, rate: torch.Tensor, vol_nodes: torch.Tensor, div: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     vol = vol_nodes[:, 1:-1]
     drift = rate[:, None] - div[:, None] - 0.5 * vol * vol
     diffusion = 0.5 * vol * vol

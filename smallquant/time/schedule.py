@@ -33,11 +33,11 @@ class Schedule:
         termination: Date,
         tenor: Period,
         calendar: Calendar,
-        convention: BusinessDayConvention = BusinessDayConvention.Following,
-        termination_convention: BusinessDayConvention = BusinessDayConvention.Following,
-        rule: DateGeneration = DateGeneration.Backward,
-        end_of_month: bool = False,
-    ):
+        convention: BusinessDayConvention  = BusinessDayConvention.Following,
+        termination_convention: BusinessDayConvention  = BusinessDayConvention.Following,
+        rule: DateGeneration  = DateGeneration.Backward,
+        end_of_month: bool  = False,
+    ) -> None:
         if termination <= effective:
             raise ValueError("termination must be after the effective date")
         self.effective = effective

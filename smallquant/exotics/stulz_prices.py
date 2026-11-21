@@ -7,7 +7,7 @@ import torch
 from smallquant.black_scholes._common import as_tensors, bivariate_west, norm_cdf
 
 
-def _min_call(forward1, forward2, strike, discount, variance1, variance2, rho):
+def _min_call(forward1: torch.Tensor, forward2: torch.Tensor, strike: torch.Tensor, discount: torch.Tensor, variance1: torch.Tensor, variance2: torch.Tensor, rho: torch.Tensor) -> torch.Tensor:
     std1 = torch.sqrt(variance1)
     std2 = torch.sqrt(variance2)
     variance = variance1 + variance2 - 2.0 * rho * std1 * std2
@@ -68,7 +68,7 @@ def price(
     return torch.where(is_call, call, put)
 
 
-def _black_undiscounted(forward, strike, std, is_call_flag: bool):
+def _black_undiscounted(forward: torch.Tensor, strike: torch.Tensor, std: torch.Tensor, is_call_flag: bool) -> torch.Tensor:
     from smallquant.black_scholes._common import black_price
 
     flag = torch.ones_like(forward, dtype=torch.bool) if is_call_flag else torch.zeros_like(

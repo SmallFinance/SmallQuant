@@ -8,7 +8,17 @@ from smallquant._tensor import align
 from smallquant.math.interp import linear
 
 
-def step(*, spot, times, normals, rate, div, strikes, expiries, local_vols):
+def step(
+    *,
+    spot: torch.Tensor,
+    times: torch.Tensor,
+    normals: torch.Tensor,
+    rate: torch.Tensor,
+    div: torch.Tensor,
+    strikes: torch.Tensor,
+    expiries: torch.Tensor,
+    local_vols: torch.Tensor,
+) -> torch.Tensor:
     """Log-Euler paths. ``local_vols`` is shaped ``[expiries, strikes]``."""
     spot, times, normals, rate, div, strikes, expiries, local_vols = align(
         spot, times, normals, rate, div, strikes, expiries, local_vols
@@ -27,7 +37,13 @@ def step(*, spot, times, normals, rate, div, strikes, expiries, local_vols):
     return torch.stack(stored, dim=1)
 
 
-def _local(spot, time, strikes, expiries, local_vols):
+def _local(
+    spot: torch.Tensor,
+    time: torch.Tensor,
+    strikes: torch.Tensor,
+    expiries: torch.Tensor,
+    local_vols: torch.Tensor,
+) -> torch.Tensor:
     # Interpolate in strike at the two surrounding expiries, then in time.
     expiry_index = torch.searchsorted(expiries.detach(), time.detach().reshape(-1)).clamp(1, expiries.numel() - 1)
     left = expiry_index[0] - 1

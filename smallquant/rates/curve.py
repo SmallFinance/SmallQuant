@@ -15,7 +15,9 @@ class DiscountCurve:
     ``log_linear`` or ``linear``. Rates are continuously compounded.
     """
 
-    def __init__(self, times: torch.Tensor, discount_factors: torch.Tensor, interpolation: str = "log_linear"):
+    def __init__(
+        self, times: torch.Tensor, discount_factors: torch.Tensor, interpolation: str = "log_linear"
+    ) -> None:
         if interpolation not in ("log_linear", "linear"):
             raise ValueError("interpolation must be 'log_linear' or 'linear'")
         self.times, self.discount_factors = align(times, discount_factors)
@@ -45,6 +47,8 @@ class DiscountCurve:
 class ZeroCurve(DiscountCurve):
     """Build a discount curve from continuously compounded zero rates."""
 
-    def __init__(self, times: torch.Tensor, zero_rates: torch.Tensor, interpolation: str = "log_linear"):
+    def __init__(
+        self, times: torch.Tensor, zero_rates: torch.Tensor, interpolation: str = "log_linear"
+    ) -> None:
         times, zero_rates = align(times, zero_rates)
         super().__init__(times, torch.exp(-zero_rates * times), interpolation)

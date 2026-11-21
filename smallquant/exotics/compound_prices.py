@@ -61,7 +61,7 @@ def price(
     )
 
 
-def _critical_spot(underlying_strike, compound_strike, std_dev, div_df, rate_df, underlying_is_call):
+def _critical_spot(underlying_strike: torch.Tensor, compound_strike: torch.Tensor, std_dev: torch.Tensor, div_df: torch.Tensor, rate_df: torch.Tensor, underlying_is_call: torch.Tensor) -> torch.Tensor:
     guess = underlying_strike.clone()
     for _ in range(40):
         forward = guess * div_df / rate_df

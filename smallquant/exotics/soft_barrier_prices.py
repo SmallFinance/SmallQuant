@@ -62,7 +62,7 @@ def price(
     return torch.where(knocked_out, torch.zeros_like(value), value)
 
 
-def _knock_in(spot, strike, lower, upper, expiry, rate, vol, div, eta: float):
+def _knock_in(spot: torch.Tensor, strike: torch.Tensor, lower: torch.Tensor, upper: torch.Tensor, expiry: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor, eta: float) -> torch.Tensor:
     carry = rate - div
     mu = (carry + 0.5 * vol * vol) / vol**2
     sqrt_t = torch.sqrt(expiry)

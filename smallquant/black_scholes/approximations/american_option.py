@@ -41,7 +41,16 @@ _SAFE_RATE = 0.05
 _GOLDEN = 0.5 * (math.sqrt(5.0) - 1.0)
 
 
-def _prepare(spot, strike, expiry, rate, vol, div, is_call, dtype):
+def _prepare(
+    spot: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    vol: torch.Tensor,
+    div: torch.Tensor,
+    is_call: torch.Tensor | bool,
+    dtype: torch.dtype | None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     spot, strike, expiry, rate, vol, div = align(spot, strike, expiry, rate, vol, div, dtype=dtype)
     is_call = _flag(is_call, spot)
     check("spot", spot, spot > 0)
@@ -51,7 +60,7 @@ def _prepare(spot, strike, expiry, rate, vol, div, is_call, dtype):
     return torch.broadcast_tensors(spot, strike, expiry, rate, vol, div, is_call)
 
 
-def _limit(price, intrinsic, degenerate):
+def _limit(price: torch.Tensor, intrinsic: torch.Tensor, degenerate: torch.Tensor) -> torch.Tensor:
     """At zero expiry the price is the intrinsic value.
 
     At non-positive vol (outside the documented domain) the larger of the intrinsic
@@ -141,14 +150,14 @@ def adesi_whaley(
     q_exp = 0.5 * (1.0 - n + sign * torch.sqrt((n - 1.0) ** 2 + 4.0 * m_over_k))
     div_discount = torch.exp(-q * t)
 
-    def d1(s):
+    def d1(s: torch.Tensor) -> torch.Tensor:
         return (torch.log(s / strike) + (carry + 0.5 * variance) * t) / std_dev
 
-    def premium_factor(s):
+    def premium_factor(s: torch.Tensor) -> torch.Tensor:
         # 1 - exp(-qT) N(sign d1(S)), the bracket in BAW eqs. 25 and 28.
         return 1.0 - div_discount * normal_cdf(sign * d1(s))
 
-    def residual(s):
+    def residual(s: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Value matching f(S) = 0 and its derivative in S."""
         euro = option_price(spot=s, strike=strike, expiry=t, rate=r, vol=sigma, div=q, is_call=is_call)
         x = d1(s)
@@ -276,7 +285,9 @@ def bjerksund_stensland(
     return _limit(price, intrinsic, degenerate)
 
 
-def _beta_and_bounds(k, r, b, variance):
+def _beta_and_bounds(
+    k: torch.Tensor, r: torch.Tensor, b: torch.Tensor, variance: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Exponent beta, perpetual boundary B_inf and short-maturity boundary B_0."""
     drift = b / variance - 0.5
     beta = -drift + torch.sqrt(drift * drift + 2.0 * r / variance)
@@ -285,13 +296,30 @@ def _beta_and_bounds(k, r, b, variance):
     return beta, b_inf, b_zero
 
 
-def _trigger(tau, b, sigma, b_inf, b_zero, scale):
+def _trigger(
+    tau: torch.Tensor,
+    b: torch.Tensor,
+    sigma: torch.Tensor,
+    b_inf: torch.Tensor,
+    b_zero: torch.Tensor,
+    scale: torch.Tensor,
+) -> torch.Tensor:
     """Flat exercise boundary B0 + (B_inf - B0)(1 - exp(h(tau))), with h scaled by ``scale``."""
     h = -(b * tau + 2.0 * sigma * torch.sqrt(tau)) * scale
     return b_zero - (b_inf - b_zero) * torch.expm1(h)
 
 
-def _phi(s, t, gamma, h, x, r, b, variance, std_dev):
+def _phi(
+    s: torch.Tensor,
+    t: torch.Tensor,
+    gamma: torch.Tensor | float,
+    h: torch.Tensor,
+    x: torch.Tensor,
+    r: torch.Tensor,
+    b: torch.Tensor,
+    variance: torch.Tensor,
+    std_dev: torch.Tensor,
+) -> torch.Tensor:
     """phi(S, T, gamma, H, X) of Bjerksund and Stensland (1993)."""
     lam = (-r + gamma * b + 0.5 * gamma * (gamma - 1.0) * variance) * t
     kappa = 2.0 * b / variance + 2.0 * gamma - 1.0
@@ -300,14 +328,16 @@ def _phi(s, t, gamma, h, x, r, b, variance, std_dev):
     return torch.exp(lam) * s**gamma * (normal_cdf(d) - torch.exp(kappa * log_xs) * normal_cdf(d - 2.0 * log_xs / std_dev))
 
 
-def _call_1993(s, k, t, r, b, sigma):
+def _call_1993(
+    s: torch.Tensor, k: torch.Tensor, t: torch.Tensor, r: torch.Tensor, b: torch.Tensor, sigma: torch.Tensor
+) -> torch.Tensor:
     variance = sigma * sigma
     std_dev = sigma * torch.sqrt(t)
     beta, b_inf, b_zero = _beta_and_bounds(k, r, b, variance)
     trigger = _trigger(t, b, sigma, b_inf, b_zero, b_zero / (b_inf - b_zero))
     alpha = (trigger - k) * trigger ** (-beta)
 
-    def phi(gamma, h):
+    def phi(gamma: torch.Tensor | float, h: torch.Tensor) -> torch.Tensor:
         return _phi(s, t, gamma, h, trigger, r, b, variance, std_dev)
 
     value = (
@@ -321,7 +351,19 @@ def _call_1993(s, k, t, r, b, sigma):
     return torch.where(s >= trigger, s - k, value)
 
 
-def _psi(s, big_t, gamma, h, x2, x1, t1, r, b, variance, rho):
+def _psi(
+    s: torch.Tensor,
+    big_t: torch.Tensor,
+    gamma: torch.Tensor | float,
+    h: torch.Tensor,
+    x2: torch.Tensor,
+    x1: torch.Tensor,
+    t1: torch.Tensor,
+    r: torch.Tensor,
+    b: torch.Tensor,
+    variance: torch.Tensor,
+    rho: torch.Tensor,
+) -> torch.Tensor:
     """psi(S, T, gamma, H, X2, X1, t1) of Bjerksund and Stensland (2002)."""
     mu = b + (gamma - 0.5) * variance
     sd1 = torch.sqrt(variance * t1)
@@ -355,7 +397,9 @@ def _psi(s, big_t, gamma, h, x2, x1, t1, r, b, variance, rho):
     return torch.exp(lam * big_t) * s**gamma * (weights * m).sum(dim=-1)
 
 
-def _call_2002(s, k, t, r, b, sigma):
+def _call_2002(
+    s: torch.Tensor, k: torch.Tensor, t: torch.Tensor, r: torch.Tensor, b: torch.Tensor, sigma: torch.Tensor
+) -> torch.Tensor:
     variance = sigma * sigma
     t1 = _GOLDEN * t
     std_dev1 = sigma * torch.sqrt(t1)
@@ -372,10 +416,10 @@ def _call_2002(s, k, t, r, b, sigma):
         [sqrt_golden, sqrt_golden, -sqrt_golden, -sqrt_golden], dtype=s.dtype, device=s.device
     )
 
-    def phi(gamma, h):
+    def phi(gamma: torch.Tensor | float, h: torch.Tensor) -> torch.Tensor:
         return _phi(s, t1, gamma, h, x2, r, b, variance, std_dev1)
 
-    def psi(gamma, h):
+    def psi(gamma: torch.Tensor | float, h: torch.Tensor) -> torch.Tensor:
         return _psi(s, t, gamma, h, x2, x1, t1, r, b, variance, rho)
 
     value = (

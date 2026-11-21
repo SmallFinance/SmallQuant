@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
+from typing import Any, TypeVar
 
 import torch
 
 from smallquant._tensor import align
 
+_P = TypeVar("_P")
 
-def _register(cls):
+
+def _register(cls: type[_P]) -> type[_P]:
     names = [field.name for field in fields(cls)]
 
-    def flatten(value):
+    def flatten(value: _P) -> tuple[tuple[torch.Tensor, ...], None]:
         return tuple(getattr(value, name) for name in names), None
 
-    def unflatten(values, _context):
+    def unflatten(values: tuple[torch.Tensor, ...], _context: None) -> _P:
         return cls(*values)
 
     try:
@@ -89,7 +92,7 @@ class HullWhiteParams:
     short_rate: torch.Tensor
 
 
-def stack_fields(params) -> torch.Tensor:
+def stack_fields(params: Any) -> torch.Tensor:
     """Concatenate floating fields of a parameter object into one vector."""
     values = []
     for field in fields(params):

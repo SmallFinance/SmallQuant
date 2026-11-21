@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import torch
 
@@ -16,22 +17,29 @@ from .vanilla_prices import _flag, option_price
 __all__ = ["implied_vol"]
 
 
+def _tolerance(tol: torch.Tensor | None, like: torch.Tensor, default: float) -> torch.Tensor:
+    """Per-element tolerance. ``None`` is ``default`` on ``like``."""
+    if tol is None:
+        return torch.full_like(like, default)
+    return align(tol, like)[0]
+
+
 def implied_vol(
-    price,
+    price: torch.Tensor,
     *,
-    strike,
-    expiry,
-    is_call=True,
-    spot=None,
-    forward=None,
-    rate=None,
-    div=None,
-    discount=None,
-    underlying_distribution=UnderlyingDistribution.LOGNORMAL,
-    tol=None,
-    max_iter=50,
-    dtype=None,
-):
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    is_call: torch.Tensor | bool = True,
+    spot: torch.Tensor | None = None,
+    forward: torch.Tensor | None = None,
+    rate: torch.Tensor | None = None,
+    div: torch.Tensor | None = None,
+    discount: torch.Tensor | None = None,
+    underlying_distribution: UnderlyingDistribution = UnderlyingDistribution.LOGNORMAL,
+    tol: torch.Tensor | None = None,
+    max_iter: int = 50,
+    dtype: torch.dtype | None = None,
+) -> torch.Tensor:
     """Implied volatility of a whole chain by Newton safeguarded with bisection.
 
     Pass ``spot`` with ``rate`` (and optionally ``div``), or ``forward`` with ``discount``
@@ -39,8 +47,10 @@ def implied_vol(
     (lognormal) or Bachelier (normal) volatility.
 
     The lognormal initial guess is Brenner-Subrahmanyam. Prices outside the no-arbitrage
-    bounds are NaN. A price equal to intrinsic value returns zero volatility. The
-    backward pass is ``d vol / d price = 1 / vega`` and does not unroll the solver.
+    bounds are NaN. A price equal to intrinsic value returns zero volatility. ``tol``
+    broadcasts with the price; ``None`` is ``1e-12`` for Black and ``1e-10`` for Bachelier.
+    Each element holds its volatility once the price error is within its own ``tol``.
+    The backward pass is ``d vol / d price = 1 / vega`` and does not unroll the solver.
     """
     if (spot is None) == (forward is None):
         raise ValueError("pass exactly one of spot and forward")
@@ -53,15 +63,30 @@ def implied_vol(
     if forward is not None and rate is None and discount is None:
         raise ValueError("forward needs discount or rate")
     if underlying_distribution == UnderlyingDistribution.LOGNORMAL:
-        return _lognormal(price, strike, expiry, is_call, spot, forward, rate, div, discount,
-                          1e-12 if tol is None else tol, max_iter, dtype)
+        return _lognormal(
+            price, strike, expiry, is_call, spot, forward, rate, div, discount, tol, max_iter, dtype
+        )
     if underlying_distribution == UnderlyingDistribution.NORMAL:
-        return _normal(price, strike, expiry, is_call, spot, forward, rate, div, discount,
-                       1e-10 if tol is None else tol, max_iter, dtype)
+        return _normal(
+            price, strike, expiry, is_call, spot, forward, rate, div, discount, tol, max_iter, dtype
+        )
     raise ValueError(f"unknown underlying_distribution {underlying_distribution!r}")
 
 
-def _lognormal(price, strike, expiry, is_call, spot, forward, rate, div, discount, tol, max_iter, dtype):
+def _lognormal(
+    price: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    is_call: torch.Tensor | bool,
+    spot: torch.Tensor | None,
+    forward: torch.Tensor | None,
+    rate: torch.Tensor | None,
+    div: torch.Tensor | None,
+    discount: torch.Tensor | None,
+    tol: torch.Tensor | None,
+    max_iter: int,
+    dtype: torch.dtype | None,
+) -> torch.Tensor:
     if spot is None:
         # A forward F with discount D is a spot F whose rate and carry both equal -log(D) / T.
         carry = rate if rate is not None else discount
@@ -77,10 +102,27 @@ def _lognormal(price, strike, expiry, is_call, spot, forward, rate, div, discoun
     check("strike", strike, strike > 0)
     check("expiry", expiry, expiry > 0)
     check("price", price, price >= 0)
+    tol = _tolerance(tol, price, 1e-12)
+    price, spot, strike, expiry, rate, div, tol, is_call = torch.broadcast_tensors(
+        price, spot, strike, expiry, rate, div, tol, is_call
+    )
     return _BlackImplied.apply(price, spot, strike, expiry, rate, div, is_call.to(dtype=price.dtype), tol, max_iter)
 
 
-def _normal(price, strike, expiry, is_call, spot, forward, rate, div, discount, tol, max_iter, dtype):
+def _normal(
+    price: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    is_call: torch.Tensor | bool,
+    spot: torch.Tensor | None,
+    forward: torch.Tensor | None,
+    rate: torch.Tensor | None,
+    div: torch.Tensor | None,
+    discount: torch.Tensor | None,
+    tol: torch.Tensor | None,
+    max_iter: int,
+    dtype: torch.dtype | None,
+) -> torch.Tensor:
     if spot is not None:
         if div is None:
             spot, strike, expiry, rate, price = align(spot, strike, expiry, rate, price, dtype=dtype)
@@ -94,6 +136,10 @@ def _normal(price, strike, expiry, is_call, spot, forward, rate, div, discount, 
         discount = torch.exp(-rate * expiry)
     forward, strike, expiry, discount, price = align(forward, strike, expiry, discount, price, dtype=dtype)
     is_call = _flag(is_call, forward)
+    tol = _tolerance(tol, price, 1e-10)
+    price, forward, strike, expiry, discount, tol, is_call = torch.broadcast_tensors(
+        price, forward, strike, expiry, discount, tol, is_call
+    )
     return _NormalImplied.apply(
         price, forward, strike, expiry, discount, is_call.to(dtype=price.dtype), tol, max_iter
     )
@@ -101,16 +147,28 @@ def _normal(price, strike, expiry, is_call, spot, forward, rate, div, discount, 
 
 class _BlackImplied(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, price, spot, strike, expiry, rate, div, is_call, tol, max_iter):
+    def forward(
+        ctx: Any,
+        price: torch.Tensor,
+        spot: torch.Tensor,
+        strike: torch.Tensor,
+        expiry: torch.Tensor,
+        rate: torch.Tensor,
+        div: torch.Tensor,
+        is_call: torch.Tensor,
+        tol: torch.Tensor,
+        max_iter: int,
+    ) -> torch.Tensor:
         flag = is_call > 0.5
         with torch.no_grad():
-            vol, active = _solve_black(price, spot, strike, expiry, rate, div, flag, float(tol), int(max_iter))
+            vol, _active = _solve_black(price, spot, strike, expiry, rate, div, flag, tol, int(max_iter))
         ctx.save_for_backward(price, spot, strike, expiry, rate, div, is_call, vol)
-        ctx.tol = float(tol)
         return vol
 
     @staticmethod
-    def backward(ctx, grad_vol):
+    def backward(
+        ctx: Any, grad_vol: torch.Tensor
+    ) -> tuple[torch.Tensor | None, ...]:
         price, spot, strike, expiry, rate, div, is_call, vol = ctx.saved_tensors
         flag = is_call > 0.5
         with torch.enable_grad():
@@ -144,15 +202,27 @@ class _BlackImplied(torch.autograd.Function):
 
 class _NormalImplied(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, price, forward, strike, expiry, discount, is_call, tol, max_iter):
+    def forward(
+        ctx: Any,
+        price: torch.Tensor,
+        forward: torch.Tensor,
+        strike: torch.Tensor,
+        expiry: torch.Tensor,
+        discount: torch.Tensor,
+        is_call: torch.Tensor,
+        tol: torch.Tensor,
+        max_iter: int,
+    ) -> torch.Tensor:
         flag = is_call > 0.5
         with torch.no_grad():
-            vol = _solve_normal(price, forward, strike, expiry, discount, flag, float(tol), int(max_iter))
+            vol = _solve_normal(price, forward, strike, expiry, discount, flag, tol, int(max_iter))
         ctx.save_for_backward(price, forward, strike, expiry, discount, is_call, vol)
         return vol
 
     @staticmethod
-    def backward(ctx, grad_vol):
+    def backward(
+        ctx: Any, grad_vol: torch.Tensor
+    ) -> tuple[torch.Tensor | None, ...]:
         _, forward, strike, expiry, discount, is_call, vol = ctx.saved_tensors
         flag = is_call > 0.5
         with torch.enable_grad():
@@ -167,7 +237,17 @@ class _NormalImplied(torch.autograd.Function):
         return (unit, -grads[0] * unit, -grads[1] * unit, -grads[2] * unit, -grads[4] * unit, None, None, None)
 
 
-def _solve_black(price, spot, strike, expiry, rate, div, is_call, tol, max_iter):
+def _solve_black(
+    price: torch.Tensor,
+    spot: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    div: torch.Tensor,
+    is_call: torch.Tensor,
+    tol: torch.Tensor,
+    max_iter: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
     expiry_safe = expiry.clamp(min=1e-12)
     discount_spot = spot * torch.exp(-div * expiry_safe)
     discount_strike = strike * torch.exp(-rate * expiry_safe)
@@ -181,20 +261,31 @@ def _solve_black(price, spot, strike, expiry, rate, div, is_call, tol, max_iter)
     lo = torch.full_like(price, 1e-8)
     hi = torch.full_like(price, 5.0)
     vol = guess.clamp(lo, hi)
+    settled = torch.zeros(price.shape, dtype=torch.bool, device=price.device)
     for _ in range(max_iter):
         model, vega = _black_and_vega(spot, strike, expiry_safe, rate, div, vol, is_call)
+        settled = settled | ((model - price).abs() <= tol)
         too_high = model > price
-        hi = torch.where(too_high, vol, hi)
-        lo = torch.where(too_high, lo, vol)
+        hi = torch.where(settled, hi, torch.where(too_high, vol, hi))
+        lo = torch.where(settled, lo, torch.where(too_high, lo, vol))
         newton = vol - (model - price) / vega.clamp(min=1e-10)
         inside = (newton > lo) & (newton < hi) & torch.isfinite(newton)
-        vol = torch.where(inside, newton, 0.5 * (lo + hi))
+        candidate = torch.where(inside, newton, 0.5 * (lo + hi))
+        vol = torch.where(settled, vol, candidate)
     vol = torch.where(at_intrinsic, torch.zeros_like(vol), vol)
     vol = torch.where(below | above, torch.full_like(vol, float("nan")), vol)
     return vol, ~(below | above | at_intrinsic)
 
 
-def _black_and_vega(spot, strike, expiry, rate, div, vol, is_call):
+def _black_and_vega(
+    spot: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    div: torch.Tensor,
+    vol: torch.Tensor,
+    is_call: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
     sqrt_t = torch.sqrt(expiry)
     d1 = (torch.log(spot / strike) + (rate - div + 0.5 * vol * vol) * expiry) / (vol * sqrt_t)
     d2 = d1 - vol * sqrt_t
@@ -207,7 +298,16 @@ def _black_and_vega(spot, strike, expiry, rate, div, vol, is_call):
     return model, vega
 
 
-def _solve_normal(price, forward, strike, expiry, discount, is_call, tol, max_iter):
+def _solve_normal(
+    price: torch.Tensor,
+    forward: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    discount: torch.Tensor,
+    is_call: torch.Tensor,
+    tol: torch.Tensor,
+    max_iter: int,
+) -> torch.Tensor:
     std_scale = torch.sqrt(expiry.clamp(min=1e-12))
     intrinsic = discount * torch.where(is_call, forward - strike, strike - forward).clamp(min=0)
     undiscounted = price / discount.clamp(min=1e-12)
@@ -221,17 +321,20 @@ def _solve_normal(price, forward, strike, expiry, discount, is_call, tol, max_it
     lo = torch.full_like(price, 1e-6)
     hi = torch.full_like(price, forward.abs() * 5.0 + 1.0)
     vol = guess.clamp(min=1e-4)
+    settled = torch.zeros(price.shape, dtype=torch.bool, device=price.device)
     for _ in range(max_iter):
         model = bachelier_price(forward, strike, vol * std_scale, discount, is_call)
+        settled = settled | ((model - price).abs() <= tol)
         # vega w.r.t. normal vol
         h = torch.where(is_call, forward - strike, strike - forward) / (vol * std_scale).clamp(min=1e-8)
         vega = discount * std_scale * normal_pdf(h)
         too_high = model > price
-        hi = torch.where(too_high, vol, hi)
-        lo = torch.where(too_high, lo, vol)
+        hi = torch.where(settled, hi, torch.where(too_high, vol, hi))
+        lo = torch.where(settled, lo, torch.where(too_high, lo, vol))
         newton = vol - (model - price) / vega.clamp(min=1e-10)
         inside = (newton > lo) & (newton < hi) & torch.isfinite(newton)
-        vol = torch.where(inside, newton, 0.5 * (lo + hi))
+        candidate = torch.where(inside, newton, 0.5 * (lo + hi))
+        vol = torch.where(settled, vol, candidate)
     at_intrinsic = (price - intrinsic).abs() <= 1e-8
     upper = discount * torch.where(is_call, torch.relu(forward) + strike.abs(), strike.abs() + torch.relu(-forward))
     # Normal prices are unbounded above as vol grows, so only the lower bound applies.

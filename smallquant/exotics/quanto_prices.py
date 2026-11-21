@@ -11,7 +11,7 @@ from smallquant.black_scholes.vanilla_prices import option_price as bs_price
 from .forward_start_prices import price as forward_price
 
 
-def _quanto_dividend(div, rate, foreign_rate, vol, fx_vol, correlation):
+def _quanto_dividend(div: torch.Tensor, rate: torch.Tensor, foreign_rate: torch.Tensor, vol: torch.Tensor, fx_vol: torch.Tensor, correlation: torch.Tensor) -> torch.Tensor:
     return div + rate - foreign_rate + correlation * vol * fx_vol
 
 

@@ -7,7 +7,7 @@ import torch
 from smallquant.black_scholes._common import as_tensors, bivariate_west, norm_cdf
 
 
-def _lambda(rate, div, vol):
+def _lambda(rate: torch.Tensor, div: torch.Tensor, vol: torch.Tensor) -> torch.Tensor:
     return 2.0 * (rate - div) / vol**2
 
 
@@ -35,7 +35,7 @@ def fixed_price(
     div_df = torch.exp(-div * expiry)
     rate_df = torch.exp(-rate * expiry)
 
-    def part(eta, level):
+    def part(eta: torch.Tensor, level: torch.Tensor) -> torch.Tensor:
         ratio = spot / level
         d1 = torch.log(ratio) / std + 0.5 * (lam + 1.0) * std
         pow_ss = ratio ** (-lam)
@@ -78,7 +78,7 @@ def floating_price(
     d1 = torch.log(ratio) / std + 0.5 * (lam + 1.0) * std
     pow_s = ratio ** (-lam)
 
-    def body(eta):
+    def body(eta: torch.Tensor) -> torch.Tensor:
         return eta * (
             (spot * div_df * norm_cdf(eta * d1) - extremum * rate_df * norm_cdf(eta * (d1 - std)))
             + spot
@@ -127,7 +127,7 @@ def partial_fixed_price(
     div_df = torch.exp(-div * expiry)
     rate_df = torch.exp(-rate * expiry)
 
-    def body(eta):
+    def body(eta: torch.Tensor) -> torch.Tensor:
         n1 = norm_cdf(eta * d1)
         n2 = norm_cdf(eta * d2)
         n3 = bivariate_west(
@@ -195,7 +195,7 @@ def partial_floating_price(
     rho2 = -torch.sqrt(tau / expiry)
     rho3 = -rho1
 
-    def body(eta):
+    def body(eta: torch.Tensor) -> torch.Tensor:
         n1 = norm_cdf(eta * (d1 - g1))
         n2 = norm_cdf(eta * (d2 - g1))
         n3 = bivariate_west(

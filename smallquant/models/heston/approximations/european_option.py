@@ -10,6 +10,7 @@ References:
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 import torch
 
@@ -117,7 +118,7 @@ def european_option_price(
         for value in (safe_expiry, v0, kappa, theta, sigma, rho)
     ]
 
-    def phi(w):
+    def phi(w: torch.Tensor) -> torch.Tensor:
         # Characteristic function of log(S_T / F): unit spot, zero carry.
         expiry_, v0_, kappa_, theta_, sigma_, rho_ = params
         return characteristic_function(
@@ -136,7 +137,7 @@ def european_option_price(
     lower, upper = _panels(_cutoff(phi, spot), num_points // _NODES)
     moneyness = log_moneyness.expand(shape).reshape(*shape, 1, 1)
 
-    def integrand(w):
+    def integrand(w: torch.Tensor) -> torch.Tensor:
         value = phi(w)
         re = value.real.to(spot.dtype)
         im = value.imag.to(spot.dtype)
@@ -154,7 +155,7 @@ def european_option_price(
     return torch.where(live, price, intrinsic)
 
 
-def _cutoff(phi, like: torch.Tensor) -> torch.Tensor:
+def _cutoff(phi: Callable[[torch.Tensor], torch.Tensor], like: torch.Tensor) -> torch.Tensor:
     """Truncation point of the Attari integral, as a constant per batch element."""
     with torch.no_grad():
         grid = torch.logspace(
@@ -171,7 +172,7 @@ def _cutoff(phi, like: torch.Tensor) -> torch.Tensor:
         return grid[pick]
 
 
-def _panels(cutoff: torch.Tensor, count: int):
+def _panels(cutoff: torch.Tensor, count: int) -> tuple[torch.Tensor, torch.Tensor]:
     """Lower and upper panel edges on ``[0, cutoff]``, panels on a new last axis.
 
     ``[0, _FIRST]``, then geometric panels up to ``min(cutoff, _SPLIT)``, which

@@ -86,7 +86,7 @@ class Date:
 
     __slots__ = ("_serial", "_year", "_month", "_day")
 
-    def __init__(self, day: int, month: int, year: int):
+    def __init__(self, day: int, month: int, year: int) -> None:
         if not 1900 < year < 2200:
             raise ValueError(f"year {year} out of bound. It must be in [1901,2199]")
         if not 1 <= month <= 12:
@@ -102,7 +102,7 @@ class Date:
         object.__setattr__(self, "_month", Month(month))
         object.__setattr__(self, "_day", day)
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError("Date is immutable")
 
     @classmethod
@@ -233,7 +233,7 @@ class Date:
             return Date(d, date.month, y)
         raise ValueError("undefined time units")
 
-    def __add__(self, other):
+    def __add__(self, other: Period | int) -> Date | int:
         if isinstance(other, Period):
             return Date.advance(self, other.length, other.units)
         if isinstance(other, int) and not isinstance(other, bool):
@@ -242,7 +242,7 @@ class Date:
 
     __radd__ = __add__
 
-    def __sub__(self, other):
+    def __sub__(self, other: Date | Period) -> int | Date:
         if isinstance(other, Date):
             return self._serial - other._serial
         if isinstance(other, Period):

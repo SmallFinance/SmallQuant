@@ -11,7 +11,13 @@ from smallquant._tensor import align
 from smallquant.rates.curve import DiscountCurve
 
 
-def bootstrap(*, pay_times, rates, kinds, deltas):
+def bootstrap(
+    *,
+    pay_times: torch.Tensor,
+    rates: torch.Tensor,
+    kinds: tuple[str, ...] | list[str],
+    deltas: torch.Tensor,
+) -> DiscountCurve:
     """Bootstrap discount factors from deposits and spot-starting par swaps.
 
     ``pay_times``, ``rates`` and ``deltas`` are aligned tensors of pillar

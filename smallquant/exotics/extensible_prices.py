@@ -71,7 +71,7 @@ def holder_price(
         spot, strike, extended_strike, premium, expiry, extended_expiry, rate, vol, div
     )
 
-    def y(level):
+    def y(level: torch.Tensor) -> torch.Tensor:
         return (torch.log(spot / level) + (carry + 0.5 * vol * vol) * expiry) / (
             vol * torch.sqrt(expiry)
         )
@@ -114,7 +114,7 @@ def holder_price(
     return torch.where(is_call, call, put)
 
 
-def _bivariate(left, right, rho):
+def _bivariate(left: torch.Tensor, right: torch.Tensor, rho: torch.Tensor) -> torch.Tensor:
     """Drezner bivariate CDF, with infinite limits reduced to a univariate CDF."""
     finite = bivariate_dr78(
         torch.where(torch.isfinite(left), left, torch.zeros_like(left)),
@@ -130,16 +130,16 @@ def _bivariate(left, right, rho):
     return torch.where(negative, torch.zeros_like(value), value)
 
 
-def _rect(lower_a, upper_a, upper_b, rho):
+def _rect(lower_a: torch.Tensor, upper_a: torch.Tensor, upper_b: torch.Tensor, rho: torch.Tensor) -> torch.Tensor:
     """M(b, d) - M(a, d), the rectangle with lower limit -infinity."""
     return _bivariate(upper_a, upper_b, rho) - _bivariate(lower_a, upper_b, rho)
 
 
-def _span(left, right):
+def _span(left: torch.Tensor, right: torch.Tensor) -> torch.Tensor:
     return norm_cdf(right) - norm_cdf(left)
 
 
-def _bs(spot, strike, expiry, rate, vol, div, is_call: bool):
+def _bs(spot: torch.Tensor, strike: torch.Tensor, expiry: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor, is_call: bool) -> torch.Tensor:
     flag = torch.ones_like(spot, dtype=torch.bool) if is_call else torch.zeros_like(spot, dtype=torch.bool)
     std = vol * torch.sqrt(expiry)
     discount = torch.exp(-rate * expiry)
@@ -151,7 +151,7 @@ def _bs(spot, strike, expiry, rate, vol, div, is_call: bool):
     return value, delta
 
 
-def _call_levels(spot, strike, extended_strike, premium, expiry, extended_expiry, rate, vol, div):
+def _call_levels(spot: torch.Tensor, strike: torch.Tensor, extended_strike: torch.Tensor, premium: torch.Tensor, expiry: torch.Tensor, extended_expiry: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor) -> torch.Tensor:
     tau = extended_expiry - expiry
     i1 = spot.clone()
     if torch.all(premium == 0):
@@ -177,7 +177,7 @@ def _call_levels(spot, strike, extended_strike, premium, expiry, extended_expiry
     return i1, i2
 
 
-def _put_levels(spot, strike, extended_strike, premium, expiry, extended_expiry, rate, vol, div):
+def _put_levels(spot: torch.Tensor, strike: torch.Tensor, extended_strike: torch.Tensor, premium: torch.Tensor, expiry: torch.Tensor, extended_expiry: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor) -> torch.Tensor:
     tau = extended_expiry - expiry
     i1 = spot.clone()
     for _ in range(40):

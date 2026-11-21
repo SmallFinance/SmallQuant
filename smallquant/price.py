@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
-from smallquant.engines.pricing import Analytic
+from typing import TypeVar
+
+import torch
+
+from smallquant.engines.pricing import Analytic, _Engine
 from smallquant.market import Market
 
+_I = TypeVar("_I")
+_M = TypeVar("_M")
 
-def price(instrument, model_params, market: Market, engine=None):
+
+def price(
+    instrument: _I, model_params: _M, market: Market, engine: _Engine | None = None
+) -> torch.Tensor:
     """Price ``instrument`` with ``model_params`` and ``market``.
 
     With ``engine=None`` the analytic engine is used when it supports the pair.

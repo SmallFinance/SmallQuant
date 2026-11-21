@@ -21,8 +21,19 @@ _INTRINSIC_TOL = 1e-10
 _UPPER_TOL = 1e-8
 
 
-def implied_vol(price, *, strike, expiry, is_call=True, spot=None, forward=None, rate=None, div=None,
-                discount=None, dtype=None):
+def implied_vol(
+    price: torch.Tensor,
+    *,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    is_call: torch.Tensor | bool = True,
+    spot: torch.Tensor | None = None,
+    forward: torch.Tensor | None = None,
+    rate: torch.Tensor | None = None,
+    div: torch.Tensor | None = None,
+    discount: torch.Tensor | None = None,
+    dtype: torch.dtype | None = None,
+) -> torch.Tensor:
     """Approximate Black implied volatility in closed form, with no iterations.
 
     Replacing the normal CDF in the Black formula by Polya's approximation
@@ -109,7 +120,17 @@ def implied_vol(price, *, strike, expiry, is_call=True, spot=None, forward=None,
     return torch.where(below | above, torch.full_like(vol, float("nan")), vol)
 
 
-def _market(price, strike, expiry, spot, forward, rate, div, discount, dtype):
+def _market(
+    price: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    spot: torch.Tensor | None,
+    forward: torch.Tensor | None,
+    rate: torch.Tensor | None,
+    div: torch.Tensor | None,
+    discount: torch.Tensor | None,
+    dtype: torch.dtype | None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Validate the spot-or-forward choice and return aligned forward and discount factor."""
     if (spot is None) == (forward is None):
         raise ValueError("pass exactly one of spot and forward")
@@ -135,7 +156,9 @@ def _market(price, strike, expiry, spot, forward, rate, div, discount, dtype):
     return forward, strike, expiry, discount, price
 
 
-def _total_vol(y, moneyness, call, put, headroom):
+def _total_vol(
+    y: torch.Tensor, moneyness: torch.Tensor, call: torch.Tensor, put: torch.Tensor, headroom: torch.Tensor
+) -> torch.Tensor:
     """``sigma sqrt(T)`` from Stefanica-Radoicic, for in-range normalized prices.
 
     ``call`` and ``put`` are the normalized call and put prices and ``headroom`` is

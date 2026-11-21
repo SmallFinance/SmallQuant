@@ -10,6 +10,7 @@ parameter a trailing singleton dimension.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 import torch
 
@@ -19,18 +20,20 @@ from smallquant.models.heston import characteristic_function as heston_cf
 
 def price(
     *,
-    spot,
-    strike,
-    expiry,
-    rate,
-    div,
-    is_call,
-    characteristic,
-    method="cos",
-    num_terms=128,
-    width=12.0,
-    dtype=None,
-):
+    spot: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    div: torch.Tensor,
+    is_call: torch.Tensor | bool,
+    characteristic: Callable[[torch.Tensor], torch.Tensor],
+    method: str = "cos",
+    num_terms: int = 128,
+    width: torch.Tensor | None = None,
+    damping: torch.Tensor | None = None,
+    frequency_step: torch.Tensor | None = None,
+    dtype: torch.dtype | None = None,
+) -> torch.Tensor:
     """European price from a characteristic function of ``log(spot)``.
 
     ``method`` is ``"cos"`` (Fang and Oosterlee 2008) or ``"carr_madan"`` (Carr and
@@ -42,38 +45,56 @@ def price(
     ``c1 - width * sqrt(c2 + sqrt(c4))`` on the left (Fang and Oosterlee's fat-tail
     rule) and ``c1 + width * sqrt(c2)`` on the right, from the cumulants of
     ``log S_T``. Wide distributions (high vol of vol, long expiry) need more terms:
-    ``num_terms=1024`` covers vol of vol up to about 1.2 at five years.
+    ``num_terms=1024`` covers vol of vol up to about 1.2 at five years. ``width``
+    broadcasts with the batch; ``None`` is ``12``.
 
     Carr-Madan integrates in forward moneyness ``log(K / F)``, so the integrand barely
-    oscillates, with damping ``alpha = 0.75`` and a trapezoid rule of step 0.1 over
-    ``num_terms`` points, so the upper limit is ``0.1 * num_terms``. Short expiries and
-    high vol of vol decay slowly in frequency and need ``num_terms`` in the thousands.
+    oscillates. ``damping`` and ``frequency_step`` broadcast with the batch; ``None``
+    is ``0.75`` and ``0.1``. The upper limit is ``frequency_step * num_terms``. Short
+    expiries and high vol of vol decay slowly in frequency and need ``num_terms`` in
+    the thousands.
     """
     if method not in ("cos", "carr_madan"):
         raise ValueError("method must be 'cos' or 'carr_madan'")
     spot, strike, expiry, rate, div = align(spot, strike, expiry, rate, div, dtype=dtype)
-    spot, strike, expiry, rate, div = torch.broadcast_tensors(spot, strike, expiry, rate, div)
+    if width is None:
+        width = torch.full_like(strike, 12.0)
+    else:
+        width = align(width, strike)[0]
+    if damping is None:
+        damping = torch.full_like(strike, 0.75)
+    else:
+        damping = align(damping, strike)[0]
+    if frequency_step is None:
+        frequency_step = torch.full_like(strike, 0.1)
+    else:
+        frequency_step = align(frequency_step, strike)[0]
+    spot, strike, expiry, rate, div, width, damping, frequency_step = torch.broadcast_tensors(
+        spot, strike, expiry, rate, div, width, damping, frequency_step
+    )
     forward_gap = spot * torch.exp(-div * expiry) - strike * torch.exp(-rate * expiry)
     if method == "cos":
         put = _cos_put(strike, expiry, rate, characteristic, num_terms, width)
         call = put + forward_gap
     else:
         forward = spot * torch.exp((rate - div) * expiry)
-        call = _carr_madan_call(forward, strike, expiry, rate, characteristic, num_terms)
+        call = _carr_madan_call(
+            forward, strike, expiry, rate, characteristic, num_terms, damping, frequency_step
+        )
         put = call - forward_gap
     is_call = torch.as_tensor(is_call, device=call.device)
     return torch.where(is_call, call, put)
 
 
-def _trailing(*values):
+def _trailing(*values: torch.Tensor) -> tuple[torch.Tensor, ...]:
     """Give each parameter a trailing singleton so it broadcasts against the grid."""
     return tuple(value.unsqueeze(-1) for value in values)
 
 
-def black_characteristic(*, spot, rate, div, vol, expiry):
+def black_characteristic(*, spot: torch.Tensor, rate: torch.Tensor, div: torch.Tensor, vol: torch.Tensor, expiry: torch.Tensor) -> Callable[[torch.Tensor], torch.Tensor]:
     """Characteristic function of ``log(S_T)`` in Black-Scholes."""
 
-    def characteristic(u):
+    def characteristic(u: torch.Tensor) -> torch.Tensor:
         u = u.to(torch.complex128)
         s, r, q, v, t = _trailing(*align(spot, rate, div, vol, expiry))
         mu = (torch.log(s) + (r - q - 0.5 * v * v) * t).to(torch.complex128)
@@ -83,10 +104,10 @@ def black_characteristic(*, spot, rate, div, vol, expiry):
     return characteristic
 
 
-def heston_characteristic(*, spot, rate, div, expiry, v0, kappa, theta, sigma, rho):
+def heston_characteristic(*, spot: torch.Tensor, rate: torch.Tensor, div: torch.Tensor, expiry: torch.Tensor, v0: torch.Tensor, kappa: torch.Tensor, theta: torch.Tensor, sigma: torch.Tensor, rho: torch.Tensor) -> Callable[[torch.Tensor], torch.Tensor]:
     """Characteristic function of ``log(S_T)`` in Heston, broadcasting over a trailing grid."""
 
-    def characteristic(u):
+    def characteristic(u: torch.Tensor) -> torch.Tensor:
         s, r, q, t, v, k, th, sg, rh = _trailing(
             *align(spot, rate, div, expiry, v0, kappa, theta, sigma, rho)
         )
@@ -95,7 +116,7 @@ def heston_characteristic(*, spot, rate, div, expiry, v0, kappa, theta, sigma, r
     return characteristic
 
 
-def _cumulants(characteristic, like):
+def _cumulants(characteristic: Callable[[torch.Tensor], torch.Tensor], like: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """First, second and fourth cumulants of ``log S_T``, for the COS truncation range.
 
     Central differences of the cumulant generating function ``K(t) = log E[exp(t X)]``,
@@ -115,7 +136,14 @@ def _cumulants(characteristic, like):
     return c1.to(like.dtype), c2.clamp(min=1e-8).to(like.dtype), c4.abs().to(like.dtype)
 
 
-def _cos_put(strike, expiry, rate, characteristic, num_terms, width):
+def _cos_put(
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    characteristic: Callable[[torch.Tensor], torch.Tensor],
+    num_terms: int,
+    width: torch.Tensor,
+) -> torch.Tensor:
     c1, c2, c4 = _cumulants(characteristic, strike)
     left = width * torch.sqrt(c2 + torch.sqrt(c4))
     right = width * torch.sqrt(c2)
@@ -132,7 +160,7 @@ def _cos_put(strike, expiry, rate, characteristic, num_terms, width):
     return torch.exp(-rate * expiry) * terms.sum(dim=-1)
 
 
-def _chi(k, a, b, c, d):
+def _chi(k: torch.Tensor, a: torch.Tensor, b: torch.Tensor, c: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
     """Cosine coefficients of ``exp(y)`` on ``[c, d]`` within ``[a, b]``."""
     scale = k * math.pi / (b - a)
     numerator = (
@@ -143,7 +171,7 @@ def _chi(k, a, b, c, d):
     return numerator / (1.0 + scale**2)
 
 
-def _psi(k, a, b, c, d):
+def _psi(k: torch.Tensor, a: torch.Tensor, b: torch.Tensor, c: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
     """Cosine coefficients of ``1`` on ``[c, d]`` within ``[a, b]``."""
     scale = k * math.pi / (b - a)
     safe = torch.where(k == 0, torch.ones_like(scale), scale)
@@ -151,9 +179,18 @@ def _psi(k, a, b, c, d):
     return torch.where(k == 0, d - c, value)
 
 
-def _carr_madan_call(forward, strike, expiry, rate, characteristic, num_terms):
-    alpha = 0.75
-    eta = 0.1
+def _carr_madan_call(
+    forward: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    characteristic: Callable[[torch.Tensor], torch.Tensor],
+    num_terms: int,
+    damping: torch.Tensor,
+    frequency_step: torch.Tensor,
+) -> torch.Tensor:
+    alpha = damping.unsqueeze(-1)
+    eta = frequency_step.unsqueeze(-1)
     grid = torch.arange(num_terms, dtype=strike.dtype, device=strike.device)
     v = eta * grid
     u = (v - 1j * (alpha + 1.0)).to(torch.complex128)
@@ -166,6 +203,6 @@ def _carr_madan_call(forward, strike, expiry, rate, characteristic, num_terms):
     # so its error falls like exp(-2 pi alpha / eta), far below double precision here.
     trapezoid = torch.where(grid == 0, 0.5, 1.0)
     integrand = torch.exp(-1j * v.to(torch.complex128) * moneyness.to(torch.complex128)) * phi / denominator
-    integral = (integrand.real.to(strike.dtype) * trapezoid).sum(dim=-1) * eta
-    undiscounted = forward * torch.exp(-alpha * moneyness.squeeze(-1)) / math.pi * integral
+    integral = (integrand.real.to(strike.dtype) * trapezoid).sum(dim=-1) * frequency_step
+    undiscounted = forward * torch.exp(-damping * moneyness.squeeze(-1)) / math.pi * integral
     return torch.exp(-rate * expiry) * undiscounted

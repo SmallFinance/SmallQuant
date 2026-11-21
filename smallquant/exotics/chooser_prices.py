@@ -71,7 +71,7 @@ def complex_price(
     return value
 
 
-def _critical_spot(spot, strike_call, strike_put, choose, call_expiry, put_expiry, rate, vol, div):
+def _critical_spot(spot: torch.Tensor, strike_call: torch.Tensor, strike_put: torch.Tensor, choose: torch.Tensor, call_expiry: torch.Tensor, put_expiry: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor) -> torch.Tensor:
     """Newton search matching QuantLib's complex-chooser critical value."""
     tc = call_expiry - 2.0 * choose
     tp = put_expiry - 2.0 * choose
@@ -87,7 +87,7 @@ def _critical_spot(spot, strike_call, strike_put, choose, call_expiry, put_expir
     return guess
 
 
-def _bs_and_delta(spot, strike, expiry, rate, vol, div, is_call: bool):
+def _bs_and_delta(spot: torch.Tensor, strike: torch.Tensor, expiry: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor, is_call: bool) -> tuple[torch.Tensor, torch.Tensor]:
     flag = torch.ones_like(spot, dtype=torch.bool) if is_call else torch.zeros_like(spot, dtype=torch.bool)
     std = vol * torch.sqrt(torch.clamp(expiry, min=1e-12))
     discount = torch.exp(-rate * expiry)

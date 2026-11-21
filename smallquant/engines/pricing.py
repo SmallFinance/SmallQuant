@@ -48,13 +48,13 @@ from .monte_carlo import price as monte_carlo_price
 class _Engine:
     registry: dict
 
-    def supports(self, instrument, model_params) -> bool:
+    def supports(self, instrument: object, model_params: object) -> bool:
         return (type(instrument), type(model_params)) in self.registry
 
     def supported_pairs(self) -> list[tuple[str, str]]:
         return [(instrument.__name__, params.__name__) for instrument, params in self.registry]
 
-    def price(self, instrument, model_params, market: Market):
+    def price(self, instrument: object, model_params: object, market: Market) -> torch.Tensor:
         key = (type(instrument), type(model_params))
         if key not in self.registry:
             listed = ", ".join(f"{left}/{right}" for left, right in self.supported_pairs())
@@ -65,11 +65,11 @@ class _Engine:
         return self.registry[key](self, instrument, model_params, market)
 
 
-def _rate(market, expiry):
+def _rate(market: Market, expiry: torch.Tensor) -> torch.Tensor:
     return market.rate_at(expiry)
 
 
-def _div(market, expiry):
+def _div(market: Market, expiry: torch.Tensor) -> torch.Tensor:
     return market.div_at(expiry)
 
 
@@ -80,11 +80,11 @@ class Analytic(_Engine):
     count for Heston.
     """
 
-    def __init__(self, num_terms: int = 128, fourier_terms: int = 256):
+    def __init__(self, num_terms: int  = 128, fourier_terms: int  = 256) -> None:
         self.num_terms = num_terms
         self.fourier_terms = fourier_terms
 
-    def _european_black(self, instrument: EuropeanOption, params: BlackScholesParams, market: Market):
+    def _european_black(self, instrument: EuropeanOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         return option_price(
             spot=market.spot,
             strike=instrument.strike,
@@ -95,7 +95,7 @@ class Analytic(_Engine):
             is_call=instrument.is_call,
         )
 
-    def _european_black76(self, instrument: EuropeanOption, params: Black76Params, market: Market):
+    def _european_black76(self, instrument: EuropeanOption, params: Black76Params, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
         forward = market.spot * torch.exp((_rate(market, expiry) - _div(market, expiry)) * expiry)
         return option_price(
@@ -107,7 +107,7 @@ class Analytic(_Engine):
             is_call=instrument.is_call,
         )
 
-    def _european_bachelier(self, instrument: EuropeanOption, params: BachelierParams, market: Market):
+    def _european_bachelier(self, instrument: EuropeanOption, params: BachelierParams, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
         forward = market.spot * torch.exp((_rate(market, expiry) - _div(market, expiry)) * expiry)
         return option_price(
@@ -119,7 +119,7 @@ class Analytic(_Engine):
             is_call=instrument.is_call,
         )
 
-    def _european_merton(self, instrument: EuropeanOption, params: MertonParams, market: Market):
+    def _european_merton(self, instrument: EuropeanOption, params: MertonParams, market: Market) -> torch.Tensor:
         return merton.price(
             spot=market.spot,
             strike=instrument.strike,
@@ -134,7 +134,7 @@ class Analytic(_Engine):
             num_terms=self.num_terms,
         )
 
-    def _european_heston(self, instrument: EuropeanOption, params: HestonParams, market: Market):
+    def _european_heston(self, instrument: EuropeanOption, params: HestonParams, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
         return fourier.price(
             spot=market.spot,
@@ -158,7 +158,7 @@ class Analytic(_Engine):
             num_terms=self.fourier_terms,
         )
 
-    def _european_sabr(self, instrument: EuropeanOption, params: SABRParams, market: Market):
+    def _european_sabr(self, instrument: EuropeanOption, params: SABRParams, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
         rate = _rate(market, expiry)
         div = _div(market, expiry)
@@ -175,7 +175,7 @@ class Analytic(_Engine):
             is_call=instrument.is_call,
         )
 
-    def _digital_black(self, instrument: DigitalOption, params: BlackScholesParams, market: Market):
+    def _digital_black(self, instrument: DigitalOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
         unit = binary_price(
             spot=market.spot,
@@ -188,7 +188,7 @@ class Analytic(_Engine):
         )
         return instrument.cash * unit
 
-    def _barrier_black(self, instrument: BarrierOption, params: BlackScholesParams, market: Market):
+    def _barrier_black(self, instrument: BarrierOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         if instrument.monitoring != "continuous":
             raise NotImplementedError(
                 "Analytic prices the continuous barrier. Set monitoring='continuous', "
@@ -211,7 +211,7 @@ class Analytic(_Engine):
             kind=instrument.kind,
         )
 
-    def _asian_black(self, instrument: AsianOption, params: BlackScholesParams, market: Market):
+    def _asian_black(self, instrument: AsianOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         if instrument.average != "geometric":
             raise NotImplementedError(
                 "Analytic prices geometric Asians. Pass a MonteCarlo engine for an arithmetic Asian."
@@ -244,7 +244,7 @@ class Analytic(_Engine):
             is_call=instrument.is_call,
         )
 
-    def _lookback_black(self, instrument: LookbackOption, params: BlackScholesParams, market: Market):
+    def _lookback_black(self, instrument: LookbackOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
         extremum = market.spot if instrument.extremum is None else instrument.extremum
         rate = _rate(market, expiry)
@@ -270,7 +270,7 @@ class Analytic(_Engine):
             is_call=instrument.is_call,
         )
 
-    def _forward_black(self, instrument: ForwardStartOption, params: BlackScholesParams, market: Market):
+    def _forward_black(self, instrument: ForwardStartOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
         return forward_start_prices.price(
             spot=market.spot,
@@ -283,7 +283,7 @@ class Analytic(_Engine):
             is_call=instrument.is_call,
         )
 
-    def _compound_black(self, instrument: CompoundOption, params: BlackScholesParams, market: Market):
+    def _compound_black(self, instrument: CompoundOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         return compound_prices.price(
             spot=market.spot,
             strike=instrument.strike,
@@ -297,7 +297,7 @@ class Analytic(_Engine):
             underlying_is_call=instrument.underlying_is_call,
         )
 
-    def _chooser_black(self, instrument: ChooserOption, params: BlackScholesParams, market: Market):
+    def _chooser_black(self, instrument: ChooserOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
         rate = _rate(market, expiry)
         div = _div(market, expiry)
@@ -324,7 +324,7 @@ class Analytic(_Engine):
             div=div,
         )
 
-    def _cliquet_black(self, instrument: CliquetOption, params: BlackScholesParams, market: Market):
+    def _cliquet_black(self, instrument: CliquetOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
         kwargs = dict(
             spot=market.spot,
@@ -340,7 +340,7 @@ class Analytic(_Engine):
             return cliquet_prices.performance_price(**kwargs)
         return cliquet_prices.price(**kwargs)
 
-    def _double_barrier_black(self, instrument: DoubleBarrierOption, params: BlackScholesParams, market: Market):
+    def _double_barrier_black(self, instrument: DoubleBarrierOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
         return double_barrier_prices.price(
             spot=market.spot,
@@ -380,16 +380,16 @@ class MonteCarlo(_Engine):
 
     def __init__(
         self,
-        num_paths: int = 8192,
-        seed: int = 1,
-        antithetic: bool = True,
-        brownian_bridge: bool = False,
-        chunk_size: int | None = None,
-        moment_match: bool = False,
-        greeks_method: str = "pathwise",
-        degree: int = 2,
-        steps: int = 50,
-    ):
+        num_paths: int  = 8192,
+        seed: int  = 1,
+        antithetic: bool  = True,
+        brownian_bridge: bool  = False,
+        chunk_size: int | None  = None,
+        moment_match: bool  = False,
+        greeks_method: str  = "pathwise",
+        degree: int  = 2,
+        steps: int  = 50,
+    ) -> None:
         self.num_paths = num_paths
         self.seed = seed
         self.antithetic = antithetic
@@ -400,7 +400,7 @@ class MonteCarlo(_Engine):
         self.degree = degree
         self.steps = steps
 
-    def _times(self, instrument, market):
+    def _times(self, instrument: EuropeanOption | DigitalOption | AsianOption | BarrierOption | ForwardStartOption | DoubleBarrierOption, market: Market) -> torch.Tensor:
         """Sorted merge of the instrument's dates with ``steps`` equal steps to expiry (MC-02).
 
         Equal-step points within ``1e-12 * expiry`` of an instrument date are dropped, so a
@@ -415,12 +415,12 @@ class MonteCarlo(_Engine):
         keep = gap > 1e-12 * expiry.abs().clamp(min=1.0)
         return torch.unique(torch.cat((dates, uniform[keep])), sorted=True)
 
-    def _european_black(self, instrument, params, market):
+    def _european_black(self, instrument: EuropeanOption | DigitalOption | AsianOption | BarrierOption | ForwardStartOption | DoubleBarrierOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         times = self._times(instrument, market)
         rate = _rate(market, instrument.expiry)
         div = _div(market, instrument.expiry)
 
-        def step(normals):
+        def step(normals: torch.Tensor) -> torch.Tensor:
             return geometric_brownian_motion.step(
                 spot=market.spot, times=times, normals=normals, rate=rate, vol=params.vol, div=div
             )
@@ -428,7 +428,7 @@ class MonteCarlo(_Engine):
         score = None
         if self.greeks_method == "likelihood_ratio":
 
-            def score(normals):
+            def score(normals: torch.Tensor) -> torch.Tensor:
                 return geometric_brownian_motion.likelihood_weight(
                     normals=normals, times=times, spot=market.spot, vol=params.vol
                 )
@@ -448,12 +448,12 @@ class MonteCarlo(_Engine):
             score=score,
         )
 
-    def _american_black(self, instrument: AmericanOption, params: BlackScholesParams, market: Market):
+    def _american_black(self, instrument: AmericanOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         times = self._times(instrument, market)
         rate = _rate(market, instrument.expiry)
         div = _div(market, instrument.expiry)
 
-        def step(normals):
+        def step(normals: torch.Tensor) -> torch.Tensor:
             return geometric_brownian_motion.step(
                 spot=market.spot, times=times, normals=normals, rate=rate, vol=params.vol, div=div
             )
@@ -479,12 +479,12 @@ class MonteCarlo(_Engine):
         paths = step(normals)
         return discounted_exercise(paths, times, instrument.intrinsic, rate, when).mean()
 
-    def _heston(self, instrument, params: HestonParams, market: Market):
+    def _heston(self, instrument: EuropeanOption, params: HestonParams, market: Market) -> torch.Tensor:
         times = self._times(instrument, market)
         rate = _rate(market, instrument.expiry)
         div = _div(market, instrument.expiry)
 
-        def step(normals):
+        def step(normals: torch.Tensor) -> torch.Tensor:
             return heston.step(
                 spot=market.spot,
                 v0=params.v0,
@@ -511,12 +511,12 @@ class MonteCarlo(_Engine):
             moment_match=self.moment_match,
         )
 
-    def _local(self, instrument, params: LocalVolParams, market: Market):
+    def _local(self, instrument: EuropeanOption, params: LocalVolParams, market: Market) -> torch.Tensor:
         times = self._times(instrument, market)
         rate = _rate(market, instrument.expiry)
         div = _div(market, instrument.expiry)
 
-        def step(normals):
+        def step(normals: torch.Tensor) -> torch.Tensor:
             return local_vol.step(
                 spot=market.spot,
                 times=times,
@@ -554,13 +554,13 @@ MonteCarlo.registry = {
 
 
 class PDE(_Engine):
-    def __init__(self, num_space: int = 200, num_time: int = 200, theta: float = 0.5, rannacher_steps: int = 2):
+    def __init__(self, num_space: int  = 200, num_time: int  = 200, theta: float  = 0.5, rannacher_steps: int  = 2) -> None:
         self.num_space = num_space
         self.num_time = num_time
         self.theta = theta
         self.rannacher_steps = rannacher_steps
 
-    def _vanilla(self, instrument, params, market, exercise):
+    def _vanilla(self, instrument: EuropeanOption | AmericanOption | BarrierOption, params: BlackScholesParams, market: Market, exercise: str) -> torch.Tensor:
         expiry = instrument.expiry
         return finite_difference.price(
             spot=market.spot,
@@ -573,23 +573,23 @@ class PDE(_Engine):
             exercise=exercise,
             num_space=self.num_space,
             num_time=self.num_time,
-            theta=self.theta,
+            theta=torch.tensor(self.theta, dtype=market.spot.dtype, device=market.spot.device),
             rannacher_steps=self.rannacher_steps,
             barrier=getattr(instrument, "barrier", None),
             barrier_kind=getattr(instrument, "kind", None) if isinstance(instrument, BarrierOption) else None,
             rebate=getattr(instrument, "rebate", None),
         )
 
-    def _european(self, instrument, params, market):
+    def _european(self, instrument: EuropeanOption | AmericanOption | BarrierOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         return self._vanilla(instrument, params, market, "european")
 
-    def _american(self, instrument, params, market):
+    def _american(self, instrument: EuropeanOption | AmericanOption | BarrierOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         return self._vanilla(instrument, params, market, "american")
 
-    def _local(self, instrument, params: LocalVolParams, market):
+    def _local(self, instrument: EuropeanOption, params: LocalVolParams, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
 
-        def local(spots, time):
+        def local(spots: torch.Tensor, time: torch.Tensor) -> torch.Tensor:
             return local_vol._local(spots, time, params.strikes, params.expiries, params.local_vols)
 
         return finite_difference.price(
@@ -602,7 +602,7 @@ class PDE(_Engine):
             is_call=instrument.is_call,
             num_space=self.num_space,
             num_time=self.num_time,
-            theta=self.theta,
+            theta=torch.tensor(self.theta, dtype=market.spot.dtype, device=market.spot.device),
             rannacher_steps=self.rannacher_steps,
             local_vol=local,
         )
@@ -617,11 +617,11 @@ PDE.registry = {
 
 
 class Fourier(_Engine):
-    def __init__(self, method: str = "cos", num_terms: int = 256):
+    def __init__(self, method: str  = "cos", num_terms: int  = 256) -> None:
         self.method = method
         self.num_terms = num_terms
 
-    def _heston(self, instrument, params: HestonParams, market):
+    def _heston(self, instrument: EuropeanOption, params: HestonParams, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
         rate = _rate(market, expiry)
         div = _div(market, expiry)
@@ -647,7 +647,7 @@ class Fourier(_Engine):
             num_terms=self.num_terms,
         )
 
-    def _black(self, instrument, params: BlackScholesParams, market):
+    def _black(self, instrument: EuropeanOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         expiry = instrument.expiry
         rate = _rate(market, expiry)
         div = _div(market, expiry)
@@ -673,11 +673,11 @@ Fourier.registry = {
 
 
 class Lattice(_Engine):
-    def __init__(self, num_steps: int = 200, kind: str = "crr"):
+    def __init__(self, num_steps: int  = 200, kind: str  = "crr") -> None:
         self.num_steps = num_steps
         self.kind = kind
 
-    def _price(self, instrument, params, market, exercise):
+    def _price(self, instrument: EuropeanOption | AmericanOption, params: BlackScholesParams, market: Market, exercise: str) -> torch.Tensor:
         expiry = instrument.expiry
         return option_price_binomial(
             spot=market.spot,
@@ -692,10 +692,10 @@ class Lattice(_Engine):
             kind=self.kind,
         )
 
-    def _european(self, instrument, params, market):
+    def _european(self, instrument: EuropeanOption | AmericanOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         return self._price(instrument, params, market, "european")
 
-    def _american(self, instrument, params, market):
+    def _american(self, instrument: EuropeanOption | AmericanOption, params: BlackScholesParams, market: Market) -> torch.Tensor:
         return self._price(instrument, params, market, "american")
 
 

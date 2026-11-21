@@ -35,7 +35,7 @@ def price(
     return _at_hit(spot, strike, expiry, rate, vol, div, cash, is_call, asset_or_nothing)
 
 
-def _at_expiry(spot, strike, expiry, rate, vol, div, cash, is_call, knock_in, asset_or_nothing):
+def _at_expiry(spot: torch.Tensor, strike: torch.Tensor, expiry: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor, cash: torch.Tensor, is_call: torch.Tensor, knock_in: torch.Tensor, asset_or_nothing: torch.Tensor) -> torch.Tensor:
     variance = vol**2 * expiry
     std = torch.sqrt(variance)
     div_df = torch.exp(-div * expiry)
@@ -48,7 +48,7 @@ def _at_expiry(spot, strike, expiry, rate, vol, div, cash, is_call, knock_in, as
     log_h_s = torch.log(strike / spot)
     log_s_h = torch.log(spot / strike)
 
-    def one(call: bool):
+    def one(call: bool) -> torch.Tensor:
         if call:
             eta, phi = -1.0, (1.0 if knock_in else -1.0)
         else:
@@ -78,7 +78,7 @@ def _at_expiry(spot, strike, expiry, rate, vol, div, cash, is_call, knock_in, as
     return torch.where(is_call, call, put)
 
 
-def _at_hit(spot, strike, expiry, rate, vol, div, cash, is_call, asset_or_nothing):
+def _at_hit(spot: torch.Tensor, strike: torch.Tensor, expiry: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor, cash: torch.Tensor, is_call: torch.Tensor, asset_or_nothing: torch.Tensor) -> torch.Tensor:
     variance = vol**2 * expiry
     std = torch.sqrt(variance)
     div_df = torch.exp(-div * expiry)
@@ -89,7 +89,7 @@ def _at_hit(spot, strike, expiry, rate, vol, div, cash, is_call, asset_or_nothin
     d1 = log_h_s / std + lam * std
     d2 = d1 - 2.0 * lam * std
 
-    def one(call: bool):
+    def one(call: bool) -> torch.Tensor:
         alive = (strike > spot) if call else (strike < spot)
         if call:
             alpha = torch.where(alive, norm_cdf(-d1), torch.full_like(d1, 0.5))

@@ -10,19 +10,19 @@ from smallquant.black_scholes.vanilla_prices import option_price as black_price
 
 def price(
     *,
-    spot,
-    strike,
-    expiry,
-    rate,
-    vol,
-    div,
-    is_call,
-    jump_intensity,
-    jump_mean,
-    jump_vol,
+    spot: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    vol: torch.Tensor,
+    div: torch.Tensor,
+    is_call: torch.Tensor | bool,
+    jump_intensity: torch.Tensor,
+    jump_mean: torch.Tensor,
+    jump_vol: torch.Tensor,
     num_terms: int = 64,
-    dtype=None,
-):
+    dtype: torch.dtype | None = None,
+) -> torch.Tensor:
     """Poisson mixture of Black-Scholes prices.
 
     ``jump_mean`` and ``jump_vol`` are the normal parameters of the log jump.
@@ -54,7 +54,20 @@ def price(
     return total
 
 
-def step(*, spot, times, normals, rate, div, vol, jump_intensity, jump_mean, jump_vol, jump_normals, counts=None):
+def step(
+    *,
+    spot: torch.Tensor,
+    times: torch.Tensor,
+    normals: torch.Tensor,
+    rate: torch.Tensor,
+    div: torch.Tensor,
+    vol: torch.Tensor,
+    jump_intensity: torch.Tensor,
+    jump_mean: torch.Tensor,
+    jump_vol: torch.Tensor,
+    jump_normals: torch.Tensor,
+    counts: torch.Tensor | None = None,
+) -> torch.Tensor:
     """Lognormal diffusion plus a compound Poisson jump on each interval.
 
     ``jump_normals`` is the normal deviate of the jump sum and has the same

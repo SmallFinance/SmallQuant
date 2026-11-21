@@ -28,7 +28,7 @@ from .vanilla_prices import option_price
 __all__ = ["fair_strike", "replicating_weights"]
 
 
-def _log_payoff(strike: torch.Tensor, reference_strike: torch.Tensor, expiry: torch.Tensor):
+def _log_payoff(strike: torch.Tensor, reference_strike: torch.Tensor, expiry: torch.Tensor) -> torch.Tensor:
     """``f(K) = (2 / T) ((K - S*) / S* - log(K / S*))``, the log contract of Appendix A."""
     ratio = strike / reference_strike
     return (2.0 / expiry) * (ratio - 1.0 - torch.log(ratio))
@@ -38,7 +38,13 @@ def _diff(values: torch.Tensor) -> torch.Tensor:
     return values[..., 1:] - values[..., :-1]
 
 
-def replicating_weights(ordered_strikes, *, reference_strike, expiry, dtype=None):
+def replicating_weights(
+    ordered_strikes: torch.Tensor,
+    *,
+    reference_strike: torch.Tensor,
+    expiry: torch.Tensor,
+    dtype: torch.dtype | None = None,
+) -> torch.Tensor:
     """Option weights that replicate the variance swap's log payoff on one strip.
 
     Following Appendix A of Demeterfi et al. (1999), the log contract
@@ -95,8 +101,19 @@ def replicating_weights(ordered_strikes, *, reference_strike, expiry, dtype=None
     return slope - previous
 
 
-def fair_strike(*, put_strikes, put_vols, call_strikes, call_vols, expiry, rate, spot,
-                reference_strike, div=None, dtype=None):
+def fair_strike(
+    *,
+    put_strikes: torch.Tensor,
+    put_vols: torch.Tensor,
+    call_strikes: torch.Tensor,
+    call_vols: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    spot: torch.Tensor,
+    reference_strike: torch.Tensor,
+    div: torch.Tensor | None = None,
+    dtype: torch.dtype | None = None,
+) -> torch.Tensor:
     """Fair variance strike of a variance swap, replicated from put and call strips.
 
     Implements Appendix A of Demeterfi et al. (1999). With forward

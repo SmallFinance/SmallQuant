@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
 
+Integrand = Callable[[torch.Tensor], torch.Tensor]
 
-def gauss_legendre(function, a, b, n: int = 20):
+
+def gauss_legendre(
+    function: Integrand, a: torch.Tensor, b: torch.Tensor, n: int = 20
+) -> torch.Tensor:
     """Gauss-Legendre integral of ``function`` on ``[a, b]``.
 
     ``function`` receives the nodes stacked on a new trailing axis and returns
@@ -19,7 +25,9 @@ def gauss_legendre(function, a, b, n: int = 20):
     return half * (values * weights).sum(dim=-1)
 
 
-def gauss_laguerre(function, n: int = 15, scale: torch.Tensor | None = None):
+def gauss_laguerre(
+    function: Integrand, n: int = 15, scale: torch.Tensor | None = None
+) -> torch.Tensor:
     """Gauss-Laguerre integral of ``function(x) * exp(-x)`` on ``[0, inf)``."""
     device = scale.device if isinstance(scale, torch.Tensor) else torch.device("cpu")
     dtype = scale.dtype if isinstance(scale, torch.Tensor) else torch.float64
@@ -32,7 +40,7 @@ def gauss_laguerre(function, n: int = 15, scale: torch.Tensor | None = None):
     return (values * weights).sum(dim=-1)
 
 
-def simpson(function, a, b, n: int = 128):
+def simpson(function: Integrand, a: torch.Tensor, b: torch.Tensor, n: int = 128) -> torch.Tensor:
     """Composite Simpson integral. ``n`` is rounded up to an even count."""
     steps = n + (n % 2)
     grid = torch.linspace(0, 1, steps + 1, dtype=_dtype(a), device=_device(a))
@@ -44,15 +52,15 @@ def simpson(function, a, b, n: int = 128):
     return width / 3.0 * (values[..., 0] + values[..., -1] + 4.0 * odd + 2.0 * even)
 
 
-def _dtype(value):
+def _dtype(value: torch.Tensor) -> torch.dtype:
     return value.dtype if isinstance(value, torch.Tensor) else torch.float64
 
 
-def _device(value):
+def _device(value: torch.Tensor) -> torch.device:
     return value.device if isinstance(value, torch.Tensor) else torch.device("cpu")
 
 
-def _legendre(n: int, like: torch.Tensor):
+def _legendre(n: int, like: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     key = (n, like.dtype, like.device)
     cached = _LEGENDRE.get(key)
     if cached is None:
@@ -62,7 +70,7 @@ def _legendre(n: int, like: torch.Tensor):
     return cached
 
 
-def _laguerre(n, dtype, device):
+def _laguerre(n: int, dtype: torch.dtype, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     key = (n, dtype, device)
     cached = _LAGUERRE.get(key)
     if cached is None:
@@ -70,11 +78,11 @@ def _laguerre(n, dtype, device):
     return _LAGUERRE[key]
 
 
-_LEGENDRE: dict = {}
-_LAGUERRE: dict = {}
+_LEGENDRE: dict[tuple[int, torch.dtype, torch.device], tuple[torch.Tensor, torch.Tensor]] = {}
+_LAGUERRE: dict[tuple[int, torch.dtype, torch.device], tuple[torch.Tensor, torch.Tensor]] = {}
 
 
-def _legendre_nodes(n, dtype, device):
+def _legendre_nodes(n: int, dtype: torch.dtype, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     # Newton on the Legendre polynomial via the recurrence. Nodes are constants.
     k = torch.arange(1, n + 1, dtype=dtype, device=device)
     guess = torch.cos(torch.pi * (k - 0.25) / (n + 0.5))
@@ -88,7 +96,7 @@ def _legendre_nodes(n, dtype, device):
     return nodes[order], weights[order]
 
 
-def _legendre_pair(x, n):
+def _legendre_pair(x: torch.Tensor, n: int) -> tuple[torch.Tensor, torch.Tensor]:
     previous = torch.ones_like(x)
     current = x.clone()
     for k in range(2, n + 1):
@@ -98,7 +106,7 @@ def _legendre_pair(x, n):
     return current, derivative
 
 
-def _laguerre_nodes(n, dtype, device):
+def _laguerre_nodes(n: int, dtype: torch.dtype, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     k = torch.arange(1, n + 1, dtype=dtype, device=device)
     # Golub-Welsch on the Jacobi matrix is stable for modest n.
     diagonal = 2.0 * k - 1.0

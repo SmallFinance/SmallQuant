@@ -49,7 +49,7 @@ def price(
     log_h2 = torch.log(barrier * barrier / (spot * strike))
     eta = 1.0 if kind.startswith("down") else -1.0
     # Compute both call (phi=1) and put (phi=-1).
-    def cumulants(phi):
+    def cumulants(phi: torch.Tensor) -> torch.Tensor:
         x1 = phi * (log_s_x / std + mu * std)
         x2 = phi * (log_s_h / std + mu * std)
         y1 = eta * (log_h2 / std + mu * std)
@@ -59,7 +59,7 @@ def price(
     h_pow = (barrier / spot) ** (2.0 * mu)
     above = strike >= barrier
 
-    def alpha(phi, cx1, cx2, cy1, cy2):
+    def alpha(phi: torch.Tensor, cx1: torch.Tensor, cx2: torch.Tensor, cy1: torch.Tensor, cy2: torch.Tensor) -> torch.Tensor:
         if kind == "down_in":
             return torch.where(above, h_pow * cy1, cx1 - cx2 + h_pow * cy2) if phi > 0 else torch.where(
                 above, cx2 + h_pow * (-cy1 + cy2), cx1
@@ -95,14 +95,14 @@ def price(
     return torch.where(knocked_in, vanilla, value)
 
 
-def _cash_or_nothing(spot, strike, expiry, rate, vol, div, cash, is_call):
+def _cash_or_nothing(spot: torch.Tensor, strike: torch.Tensor, expiry: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor, cash: torch.Tensor, is_call: torch.Tensor) -> torch.Tensor:
     std = vol * torch.sqrt(expiry)
     d2 = (torch.log(spot / strike) + (rate - div - 0.5 * vol**2) * expiry) / std
     sign = torch.where(is_call, torch.ones_like(d2), -torch.ones_like(d2))
     return cash * torch.exp(-rate * expiry) * norm_cdf(sign * d2)
 
 
-def _asset_or_nothing(spot, strike, expiry, rate, vol, div, is_call):
+def _asset_or_nothing(spot: torch.Tensor, strike: torch.Tensor, expiry: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor, is_call: torch.Tensor) -> torch.Tensor:
     std = vol * torch.sqrt(expiry)
     d1 = (torch.log(spot / strike) + (rate - div + 0.5 * vol**2) * expiry) / std
     sign = torch.where(is_call, torch.ones_like(d1), -torch.ones_like(d1))

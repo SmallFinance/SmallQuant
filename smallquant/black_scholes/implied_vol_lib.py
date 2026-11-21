@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import enum
 
+import torch
+
 from . import implied_vol_approximation, implied_vol_newton_root
 from .implied_vol_utils import UnderlyingDistribution
 
@@ -22,28 +24,30 @@ class ImpliedVolMethod(enum.Enum):
 
 
 def implied_vol(
-    price,
+    price: torch.Tensor,
     *,
-    strike,
-    expiry,
-    is_call=True,
-    spot=None,
-    forward=None,
-    rate=None,
-    div=None,
-    discount=None,
-    underlying_distribution=UnderlyingDistribution.LOGNORMAL,
-    method=ImpliedVolMethod.NEWTON,
-    tol=None,
-    max_iter=50,
-    dtype=None,
-):
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    is_call: torch.Tensor | bool = True,
+    spot: torch.Tensor | None = None,
+    forward: torch.Tensor | None = None,
+    rate: torch.Tensor | None = None,
+    div: torch.Tensor | None = None,
+    discount: torch.Tensor | None = None,
+    underlying_distribution: UnderlyingDistribution = UnderlyingDistribution.LOGNORMAL,
+    method: ImpliedVolMethod = ImpliedVolMethod.NEWTON,
+    tol: torch.Tensor | None = None,
+    max_iter: int = 50,
+    dtype: torch.dtype | None = None,
+) -> torch.Tensor:
     """Implied volatility of a chain of European prices.
 
     Pass ``spot`` with ``rate`` (and optionally ``div``), or ``forward`` with ``discount``
     or ``rate``, as in ``option_price``. ``method`` is ``ImpliedVolMethod.NEWTON``
     (default, exact) or ``ImpliedVolMethod.FAST_APPROX`` (lognormal only, no iterations).
-    ``tol`` and ``max_iter`` apply to Newton only.
+    ``tol`` is a tensor broadcast with the chain, or ``None`` for ``1e-12`` (lognormal) or
+    ``1e-10`` (normal). Each option stops once its price error is within its own ``tol``.
+    ``max_iter`` is the shared step count. Both apply to Newton only.
 
     Example:
         >>> implied_vol(price, spot=spot, strike=strike, expiry=expiry, rate=rate,

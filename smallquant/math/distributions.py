@@ -182,11 +182,11 @@ def bivariate_dr78(a: torch.Tensor, b: torch.Tensor, rho: torch.Tensor) -> torch
     na = normal_cdf(a)
     nb = normal_cdf(b)
 
-    def base_call(aa, bb, rr):
+    def base_call(aa: torch.Tensor, bb: torch.Tensor, rr: torch.Tensor) -> torch.Tensor:
         return _drezner_base(aa, bb, rr)
 
     # Reductions of M(u, 0; r) down to the negative quadrant.
-    def m_with_zero(u, r):
+    def m_with_zero(u: torch.Tensor, r: torch.Tensor) -> torch.Tensor:
         # u <= 0, r <= 0
         base = base_call(torch.minimum(u, torch.zeros_like(u)), torch.zeros_like(u), torch.minimum(r, torch.zeros_like(r)))
         # u >= 0, r >= 0: 0.5 - M(-u, 0; -r)
@@ -197,7 +197,7 @@ def bivariate_dr78(a: torch.Tensor, b: torch.Tensor, rho: torch.Tensor) -> torch
             torch.where(r <= 0, na_of(u) + normal_cdf(torch.zeros_like(u)) - 1.0 + base_call(-u, torch.zeros_like(u), r), both_pos),
         )
 
-    def na_of(u):
+    def na_of(u: torch.Tensor) -> torch.Tensor:
         return normal_cdf(u)
 
     # Case a*b*rho > 0

@@ -88,7 +88,7 @@ def _take(fp: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
     return torch.gather(fp, -1, expanded).movedim(-1, 0)
 
 
-def _locate(x: torch.Tensor, xp: torch.Tensor):
+def _locate(x: torch.Tensor, xp: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     flat = x.reshape(-1)
     index = torch.searchsorted(xp.detach(), flat.detach()).clamp(1, xp.numel() - 1)
     left = xp[index - 1]
@@ -104,7 +104,7 @@ def _reshape(value: torch.Tensor, x: torch.Tensor, fp: torch.Tensor) -> torch.Te
     return value.reshape(*x.shape, *fp.shape[:-1])
 
 
-def _spline(x, xp, fp, moment):
+def _spline(x: torch.Tensor, xp: torch.Tensor, fp: torch.Tensor, moment: torch.Tensor) -> torch.Tensor:
     index, span, weight_right = _locate(x, xp)
     weight_left = 1.0 - weight_right
     left_y = _take(fp, index - 1)
@@ -125,7 +125,7 @@ def _spline(x, xp, fp, moment):
     return _reshape(value, x, fp)
 
 
-def _hermite(x, xp, fp, tangent):
+def _hermite(x: torch.Tensor, xp: torch.Tensor, fp: torch.Tensor, tangent: torch.Tensor) -> torch.Tensor:
     index, span, t = _locate(x, xp)
     left_y = _take(fp, index - 1)
     right_y = _take(fp, index)

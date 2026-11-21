@@ -49,7 +49,7 @@ def price(
     return torch.where(is_call, call, put)
 
 
-def _call(spot, strike, barrier, expiry, cover, rate, vol, div, kind, barrier_range):
+def _call(spot: torch.Tensor, strike: torch.Tensor, barrier: torch.Tensor, expiry: torch.Tensor, cover: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor, kind: torch.Tensor, barrier_range: torch.Tensor) -> torch.Tensor:
     if barrier_range == "start":
         eta = 1.0 if kind.startswith("down") else -1.0
         out = _ca(spot, strike, barrier, expiry, cover, rate, vol, div, eta)
@@ -66,7 +66,7 @@ def _call(spot, strike, barrier, expiry, cover, rate, vol, div, kind, barrier_ra
     return _cob2(spot, strike, barrier, expiry, cover, rate, vol, div, kind)
 
 
-def _terms(spot, strike, barrier, expiry, cover, rate, vol, div):
+def _terms(spot: torch.Tensor, strike: torch.Tensor, barrier: torch.Tensor, expiry: torch.Tensor, cover: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor) -> torch.Tensor:
     carry = rate - div
     rho = torch.sqrt(cover / expiry)
     vol_cover = vol
@@ -74,42 +74,42 @@ def _terms(spot, strike, barrier, expiry, cover, rate, vol, div):
     sqrt_t = torch.sqrt(expiry)
     sqrt_c = torch.sqrt(cover)
 
-    def d1():
+    def d1() -> torch.Tensor:
         return (torch.log(spot / strike) + (carry + 0.5 * vol**2) * expiry) / (sqrt_t * vol)
 
-    def d2():
+    def d2() -> torch.Tensor:
         return d1() - vol * sqrt_t
 
-    def e1():
+    def e1() -> torch.Tensor:
         return (torch.log(spot / barrier) + (carry + 0.5 * vol**2) * cover) / (sqrt_c * vol)
 
-    def e2():
+    def e2() -> torch.Tensor:
         return e1() - vol * sqrt_c
 
-    def e3():
+    def e3() -> torch.Tensor:
         return e1() + 2.0 * torch.log(barrier / spot) / (vol * sqrt_c)
 
-    def e4():
+    def e4() -> torch.Tensor:
         return e3() - vol * sqrt_c
 
-    def f1():
+    def f1() -> torch.Tensor:
         return (
             torch.log(spot / strike) + 2.0 * torch.log(barrier / spot) + (carry + 0.5 * vol**2) * expiry
         ) / (vol * sqrt_t)
 
-    def f2():
+    def f2() -> torch.Tensor:
         return f1() - vol * sqrt_t
 
-    def g1():
+    def g1() -> torch.Tensor:
         return (torch.log(spot / barrier) + (carry + 0.5 * vol**2) * expiry) / (sqrt_t * vol)
 
-    def g2():
+    def g2() -> torch.Tensor:
         return g1() - vol * sqrt_t
 
-    def g3():
+    def g3() -> torch.Tensor:
         return g1() + 2.0 * torch.log(barrier / spot) / (vol * sqrt_t)
 
-    def g4():
+    def g4() -> torch.Tensor:
         return g3() - vol * sqrt_t
 
     return {
@@ -133,11 +133,11 @@ def _terms(spot, strike, barrier, expiry, cover, rate, vol, div):
     }
 
 
-def _m(a, b, rho):
+def _m(a: torch.Tensor, b: torch.Tensor, rho: torch.Tensor) -> torch.Tensor:
     return bivariate_dr78(a, b, rho)
 
 
-def _ca(spot, strike, barrier, expiry, cover, rate, vol, div, eta: float):
+def _ca(spot: torch.Tensor, strike: torch.Tensor, barrier: torch.Tensor, expiry: torch.Tensor, cover: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor, eta: float) -> torch.Tensor:
     t = _terms(spot, strike, barrier, expiry, cover, rate, vol, div)
     carry = t["carry"]
     result = spot * torch.exp((carry - rate) * expiry)
@@ -152,7 +152,7 @@ def _ca(spot, strike, barrier, expiry, cover, rate, vol, div, eta: float):
     return result
 
 
-def _cob1(spot, strike, barrier, expiry, cover, rate, vol, div):
+def _cob1(spot: torch.Tensor, strike: torch.Tensor, barrier: torch.Tensor, expiry: torch.Tensor, cover: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor) -> torch.Tensor:
     t = _terms(spot, strike, barrier, expiry, cover, rate, vol, div)
     carry = t["carry"]
     growth = spot * torch.exp((carry - rate) * expiry)
@@ -176,7 +176,7 @@ def _cob1(spot, strike, barrier, expiry, cover, rate, vol, div):
     return torch.where(above, high, low)
 
 
-def _cob2(spot, strike, barrier, expiry, cover, rate, vol, div, kind):
+def _cob2(spot: torch.Tensor, strike: torch.Tensor, barrier: torch.Tensor, expiry: torch.Tensor, cover: torch.Tensor, rate: torch.Tensor, vol: torch.Tensor, div: torch.Tensor, kind: torch.Tensor) -> torch.Tensor:
     if not torch.all(strike < barrier):
         raise ValueError("strike must be below the barrier for an end-B2 partial barrier")
     t = _terms(spot, strike, barrier, expiry, cover, rate, vol, div)

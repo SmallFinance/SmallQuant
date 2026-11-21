@@ -13,8 +13,10 @@ import math
 from abc import ABC, abstractmethod
 from enum import Enum
 
+from .calendar import Calendar
 from .date import Date, Month
 from .period import Period, TimeUnit
+from .schedule import Schedule
 
 
 def _lround(x: float) -> int:
@@ -56,7 +58,7 @@ class _ActualFixed(DayCounter):
     _label = ""
     _denominator = 0.0
 
-    def __init__(self, include_last_day: bool = False):
+    def __init__(self, include_last_day: bool  = False) -> None:
         self._inc = include_last_day
 
     @property
@@ -66,7 +68,7 @@ class _ActualFixed(DayCounter):
     def day_count(self, d1: Date, d2: Date) -> int:
         return (d2 - d1) + (1 if self._inc else 0)
 
-    def year_fraction(self, d1, d2, ref_start=None, ref_end=None) -> float:
+    def year_fraction(self, d1: Date, d2: Date, ref_start: Date | None =None, ref_end: Date | None =None) -> float:
         return ((d2 - d1) + (1.0 if self._inc else 0.0)) / self._denominator
 
 
@@ -92,7 +94,7 @@ class Actual365Fixed(DayCounter):
 
     _MONTH_OFFSET = (0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)
 
-    def __init__(self, convention: Convention = Convention.Standard):
+    def __init__(self, convention: Convention  = Convention.Standard) -> None:
         self._c = convention
 
     @property
@@ -115,7 +117,7 @@ class Actual365Fixed(DayCounter):
             s2 -= 1
         return s2 - s1
 
-    def year_fraction(self, d1, d2, ref_start=None, ref_end=None) -> float:
+    def year_fraction(self, d1: Date, d2: Date, ref_start: Date | None =None, ref_end: Date | None =None) -> float:
         if self._c == self.Convention.Canadian:
             if d1 == d2:
                 return 0.0
@@ -151,7 +153,7 @@ class Thirty360(DayCounter):
         ISDA = 7
         NASD = 8
 
-    def __init__(self, convention: Convention, termination_date: Date | None = None):
+    def __init__(self, convention: Convention, termination_date: Date | None  = None) -> None:
         C = self.Convention
         self._c = convention
         self._term = termination_date
@@ -238,7 +240,7 @@ class Thirty360(DayCounter):
 
         return 360 * (yy2 - yy1) + 30 * (mm2 - mm1) + (dd2 - dd1)
 
-    def year_fraction(self, d1, d2, ref_start=None, ref_end=None) -> float:
+    def year_fraction(self, d1: Date, d2: Date, ref_start: Date | None =None, ref_end: Date | None =None) -> float:
         return self.day_count(d1, d2) / 360.0
 
 
@@ -254,7 +256,7 @@ class ActualActual(DayCounter):
         AFB = 5
         Euro = 6
 
-    def __init__(self, convention: Convention = Convention.ISDA):
+    def __init__(self, convention: Convention  = Convention.ISDA) -> None:
         C = self.Convention
         self._c = convention
         self._kind = {
@@ -271,7 +273,7 @@ class ActualActual(DayCounter):
     def name(self) -> str:
         return f"Actual/Actual ({self._kind})"
 
-    def year_fraction(self, d1, d2, ref_start=None, ref_end=None, schedule=None) -> float:
+    def year_fraction(self, d1: Date, d2: Date, ref_start: Date | None =None, ref_end: Date | None =None, schedule: Schedule | None =None) -> float:
         if schedule is not None:
             if self._kind != "ISMA":
                 raise ValueError("a schedule is only used by Actual/Actual ISMA")
@@ -282,7 +284,7 @@ class ActualActual(DayCounter):
             return self._afb(d1, d2)
         return self._isma(d1, d2, ref_start, ref_end)
 
-    def _isma_schedule(self, d1: Date, d2: Date, schedule) -> float:
+    def _isma_schedule(self, d1: Date, d2: Date, schedule: Schedule) -> float:
         """ISMA year fraction driven by the coupon periods of ``schedule``."""
         if d1 == d2:
             return 0.0
@@ -401,7 +403,7 @@ def _reference_fraction(d1: Date, d2: Date, ref_start: Date, ref_end: Date) -> f
 class Business252(DayCounter):
     """Business/252: business days in the calendar divided by 252."""
 
-    def __init__(self, calendar):
+    def __init__(self, calendar: Calendar) -> None:
         self.calendar = calendar
 
     @property
@@ -411,7 +413,7 @@ class Business252(DayCounter):
     def day_count(self, d1: Date, d2: Date) -> int:
         return self.calendar.business_days_between(d1, d2)
 
-    def year_fraction(self, d1, d2, ref_start=None, ref_end=None) -> float:
+    def year_fraction(self, d1: Date, d2: Date, ref_start: Date | None =None, ref_end: Date | None =None) -> float:
         return self.day_count(d1, d2) / 252.0
 
 
@@ -427,7 +429,7 @@ class SimpleDayCounter(DayCounter):
     def day_count(self, d1: Date, d2: Date) -> int:
         return self._fallback.day_count(d1, d2)
 
-    def year_fraction(self, d1, d2, ref_start=None, ref_end=None) -> float:
+    def year_fraction(self, d1: Date, d2: Date, ref_start: Date | None =None, ref_end: Date | None =None) -> float:
         dm1, dm2 = d1.day, d2.day
         if (
             dm1 == dm2
@@ -448,5 +450,5 @@ class OneDayCounter(DayCounter):
     def day_count(self, d1: Date, d2: Date) -> int:
         return 1 if d2 >= d1 else -1
 
-    def year_fraction(self, d1, d2, ref_start=None, ref_end=None) -> float:
+    def year_fraction(self, d1: Date, d2: Date, ref_start: Date | None =None, ref_end: Date | None =None) -> float:
         return float(self.day_count(d1, d2))

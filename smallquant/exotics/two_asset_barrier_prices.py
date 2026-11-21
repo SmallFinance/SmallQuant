@@ -58,10 +58,10 @@ def price(
     e3 = e1 - 2.0 * torch.log(barrier / spot2) / (vol2 * sqrt_t)
     e4 = e2 - 2.0 * torch.log(barrier / spot2) / (vol2 * sqrt_t)
 
-    def bivariate(left, right, rho):
+    def bivariate(left: torch.Tensor, right: torch.Tensor, rho: torch.Tensor) -> torch.Tensor:
         return bivariate_dr78(left, right, rho)
 
-    def piece(eta, phi):
+    def piece(eta: torch.Tensor, phi: torch.Tensor) -> torch.Tensor:
         mirror_mu = torch.exp(
             (2.0 * (mu2 + correlation * vol1 * vol2) * torch.log(barrier / spot2)) / vol2**2
         )

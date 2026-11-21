@@ -8,7 +8,19 @@ from smallquant._tensor import align
 from smallquant.math.distributions import normal_cdf
 
 
-def characteristic_function(u, *, spot, rate, div, expiry, v0, kappa, theta, sigma, rho):
+def characteristic_function(
+    u: torch.Tensor,
+    *,
+    spot: torch.Tensor,
+    rate: torch.Tensor,
+    div: torch.Tensor,
+    expiry: torch.Tensor,
+    v0: torch.Tensor,
+    kappa: torch.Tensor,
+    theta: torch.Tensor,
+    sigma: torch.Tensor,
+    rho: torch.Tensor,
+) -> torch.Tensor:
     """Heston characteristic function of ``log(spot)``, little-trap branch.
 
     Albrecher, Mayer, Schoutens and Tistaert (2007). ``u`` may be complex.
@@ -22,7 +34,7 @@ def characteristic_function(u, *, spot, rate, div, expiry, v0, kappa, theta, sig
     else:
         u = u.to(torch.complex128)
     real = spot.dtype
-    def c(value):
+    def c(value: torch.Tensor) -> torch.Tensor:
         return value.to(real).to(torch.complex128)
 
     iu = 1j * u
@@ -46,7 +58,19 @@ def characteristic_function(u, *, spot, rate, div, expiry, v0, kappa, theta, sig
     return torch.exp(capital_c + capital_d * v0_c + iu * torch.log(c(spot)))
 
 
-def step(*, spot, v0, times, normals, rate, div, kappa, theta, sigma, rho):
+def step(
+    *,
+    spot: torch.Tensor,
+    v0: torch.Tensor,
+    times: torch.Tensor,
+    normals: torch.Tensor,
+    rate: torch.Tensor,
+    div: torch.Tensor,
+    kappa: torch.Tensor,
+    theta: torch.Tensor,
+    sigma: torch.Tensor,
+    rho: torch.Tensor,
+) -> torch.Tensor:
     """Andersen (2008) QE paths. ``normals`` has a trailing dimension of 2.
 
     Dimension 0 drives the variance and dimension 1 is the idiosyncratic spot
@@ -91,7 +115,14 @@ def step(*, spot, v0, times, normals, rate, div, kappa, theta, sigma, rho):
     return torch.stack((spot_path, var_path), dim=-1)
 
 
-def _qe_next(variance, kappa, theta, sigma, dt, z):
+def _qe_next(
+    variance: torch.Tensor,
+    kappa: torch.Tensor,
+    theta: torch.Tensor,
+    sigma: torch.Tensor,
+    dt: torch.Tensor,
+    z: torch.Tensor,
+) -> torch.Tensor:
     decay = torch.exp(-kappa * dt)
     mean = theta + (variance - theta) * decay
     square = (

@@ -25,7 +25,18 @@ def _flag(is_call: torch.Tensor | bool, like: torch.Tensor) -> torch.Tensor:
     return is_call.to(device=like.device)
 
 
-def _market(*, strike, expiry, volatility, spot, forward, rate, div, discount, dtype):
+def _market(
+    *,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    volatility: torch.Tensor,
+    spot: torch.Tensor | None,
+    forward: torch.Tensor | None,
+    rate: torch.Tensor | None,
+    div: torch.Tensor | None,
+    discount: torch.Tensor | None,
+    dtype: torch.dtype | None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Align inputs and resolve the spot-or-forward choice into a forward and a discount factor.
 
     ``spot`` needs ``rate`` (``div`` defaults to zero). ``forward`` needs ``discount`` or
@@ -56,7 +67,7 @@ def _market(*, strike, expiry, volatility, spot, forward, rate, div, discount, d
     return forward, strike, expiry, volatility, discount
 
 
-def _one_vol(vol, normal_vol):
+def _one_vol(vol: torch.Tensor | None, normal_vol: torch.Tensor | None) -> None:
     if (vol is None) == (normal_vol is None):
         raise ValueError("pass exactly one of vol and normal_vol")
 
@@ -118,7 +129,16 @@ def option_price(
     return bachelier_price(forward, strike, std_dev, discount, is_call)
 
 
-def _black_scholes(spot, strike, expiry, rate, vol, div, is_call, dtype):
+def _black_scholes(
+    spot: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    vol: torch.Tensor,
+    div: torch.Tensor | None,
+    is_call: torch.Tensor | bool,
+    dtype: torch.dtype | None,
+) -> torch.Tensor:
     if div is None:
         spot, strike, expiry, rate, vol = align(spot, strike, expiry, rate, vol, dtype=dtype)
         div = torch.zeros_like(rate)
@@ -270,36 +290,36 @@ def barrier_price(
     pow0 = hs ** (2.0 * mu)
     pow1 = pow0 * hs * hs
 
-    def A(phi):
+    def A(phi: float) -> torch.Tensor:
         x1 = torch.log(spot / strike) / std + mu_sigma
         return phi * (spot * div_df * _n(phi * x1) - strike * rate_df * _n(phi * (x1 - std)))
 
-    def B(phi):
+    def B(phi: float) -> torch.Tensor:
         x2 = torch.log(spot / barrier) / std + mu_sigma
         return phi * (spot * div_df * _n(phi * x2) - strike * rate_df * _n(phi * (x2 - std)))
 
-    def C(eta, phi):
+    def C(eta: float, phi: float) -> torch.Tensor:
         y1 = torch.log(barrier * hs / strike) / std + mu_sigma
         return phi * (
             spot * div_df * _guard(pow1, _n(eta * y1))
             - strike * rate_df * _guard(pow0, _n(eta * (y1 - std)))
         )
 
-    def D(eta, phi):
+    def D(eta: float, phi: float) -> torch.Tensor:
         y2 = torch.log(barrier / spot) / std + mu_sigma
         return phi * (
             spot * div_df * _guard(pow1, _n(eta * y2))
             - strike * rate_df * _guard(pow0, _n(eta * (y2 - std)))
         )
 
-    def E(eta):
+    def E(eta: float) -> torch.Tensor:
         x2 = torch.log(spot / barrier) / std + mu_sigma
         y2 = torch.log(barrier / spot) / std + mu_sigma
         return rebate * rate_df * (
             _n(eta * (x2 - std)) - _guard(pow0, _n(eta * (y2 - std)))
         )
 
-    def F(eta):
+    def F(eta: float) -> torch.Tensor:
         lam = torch.sqrt(mu**2 + 2.0 * rate / vol**2)
         z = torch.log(barrier / spot) / std + lam * std
         return rebate * (

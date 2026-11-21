@@ -62,7 +62,7 @@ class Period:
 
     __slots__ = ("_length", "_units")
 
-    def __init__(self, length: int | Frequency = 0, units: TimeUnit = TimeUnit.Days):
+    def __init__(self, length: int | Frequency  = 0, units: TimeUnit  = TimeUnit.Days) -> None:
         if isinstance(length, Frequency):
             length, units = self._from_frequency(length)
         self._length = int(length)

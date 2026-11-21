@@ -9,7 +9,17 @@ from smallquant._tensor import align
 __all__ = ["implied_vol"]
 
 
-def implied_vol(*, forward, strike, expiry, alpha, beta, rho, nu, dtype=None):
+def implied_vol(
+    *,
+    forward: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    alpha: torch.Tensor,
+    beta: torch.Tensor,
+    rho: torch.Tensor,
+    nu: torch.Tensor,
+    dtype: torch.dtype | None = None,
+) -> torch.Tensor:
     """Lognormal SABR volatility.
 
     The at-the-money point uses the series limit of ``z / x(z)``, so the value

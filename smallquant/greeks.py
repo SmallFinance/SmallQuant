@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
+
 import torch
 
+from smallquant._tensor import align
 
-def first_order(price: torch.Tensor, inputs: dict[str, torch.Tensor], *, sum_batch: bool = True):
+PriceFn = Callable[[dict[str, torch.Tensor]], torch.Tensor]
+
+
+def first_order(
+    price: torch.Tensor, inputs: dict[str, torch.Tensor], *, sum_batch: bool = True
+) -> dict[str, torch.Tensor]:
     """Gradients of ``price.sum()``.
 
     An input with one element per price receives the per-option gradient. A
@@ -37,7 +45,11 @@ def first_order(price: torch.Tensor, inputs: dict[str, torch.Tensor], *, sum_bat
     }
 
 
-def second_order(price_fn, inputs: dict[str, torch.Tensor], pairs=None):
+def second_order(
+    price_fn: PriceFn,
+    inputs: dict[str, torch.Tensor],
+    pairs: Sequence[tuple[str, str]] | None = None,
+) -> dict[tuple[str, str], torch.Tensor]:
     """Unique second derivatives via forward-over-reverse.
 
     ``price_fn`` takes the same dictionary of tensors and returns a price.
@@ -47,7 +59,7 @@ def second_order(price_fn, inputs: dict[str, torch.Tensor], pairs=None):
     names = list(inputs)
     values = [inputs[name] for name in names]
 
-    def wrapped(xs):
+    def wrapped(xs: list[torch.Tensor]) -> torch.Tensor:
         mapped = {name: xs[index] for index, name in enumerate(names)}
         return price_fn(mapped).sum()
 
@@ -65,12 +77,12 @@ def second_order(price_fn, inputs: dict[str, torch.Tensor], pairs=None):
     return result
 
 
-def jacobian(price_fn, inputs: dict[str, torch.Tensor]):
+def jacobian(price_fn: PriceFn, inputs: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     """Per-option Jacobian of a vector price with respect to each input."""
     names = list(inputs)
     values = [inputs[name] for name in names]
 
-    def wrapped(xs):
+    def wrapped(xs: list[torch.Tensor]) -> torch.Tensor:
         mapped = {name: xs[index] for index, name in enumerate(names)}
         return price_fn(mapped)
 
@@ -78,7 +90,13 @@ def jacobian(price_fn, inputs: dict[str, torch.Tensor]):
     return {name: blocks[index] for index, name in enumerate(names)}
 
 
-def bump(price_fn, inputs: dict[str, torch.Tensor], *, rel: float = 1e-4, scheme: str = "central"):
+def bump(
+    price_fn: PriceFn,
+    inputs: dict[str, torch.Tensor],
+    *,
+    rel: torch.Tensor | None = None,
+    scheme: str = "central",
+) -> dict[str, torch.Tensor]:
     """Finite-difference check. This is not a pricing Greek.
 
     Example:
@@ -91,7 +109,9 @@ def bump(price_fn, inputs: dict[str, torch.Tensor], *, rel: float = 1e-4, scheme
     base = price_fn(inputs)
     out = {}
     for name, value in inputs.items():
-        step = torch.where(value == 0, torch.full_like(value, rel), value.abs() * rel)
+        step_scale = torch.full_like(value, 1e-4) if rel is None else align(rel, value)[0]
+        step_scale = torch.broadcast_to(step_scale, value.shape)
+        step = torch.where(value == 0, step_scale, value.abs() * step_scale)
         up = dict(inputs)
         up[name] = value + step
         if scheme == "forward":

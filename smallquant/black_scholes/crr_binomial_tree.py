@@ -11,18 +11,18 @@ from .vanilla_prices import _flag
 
 def option_price_binomial(
     *,
-    spot,
-    strike,
-    expiry,
-    rate,
-    vol,
-    div,
-    is_call,
-    exercise="european",
-    num_steps=200,
-    kind="crr",
-    dtype=None,
-):
+    spot: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    vol: torch.Tensor,
+    div: torch.Tensor,
+    is_call: torch.Tensor | bool,
+    exercise: str = "european",
+    num_steps: int = 200,
+    kind: str = "crr",
+    dtype: torch.dtype | None = None,
+) -> torch.Tensor:
     """Lattice price.
 
     ``kind`` is ``"crr"`` or ``"trinomial"``. ``exercise`` is ``"european"``
@@ -49,11 +49,21 @@ def option_price_binomial(
     return _trinomial(spot, strike, expiry, rate, vol, div, is_call, exercise, num_steps)
 
 
-def _intrinsic(spot, strike, is_call):
+def _intrinsic(spot: torch.Tensor, strike: torch.Tensor, is_call: torch.Tensor) -> torch.Tensor:
     return torch.where(is_call, torch.relu(spot - strike), torch.relu(strike - spot))
 
 
-def _crr(spot, strike, expiry, rate, vol, div, is_call, exercise, num_steps):
+def _crr(
+    spot: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    vol: torch.Tensor,
+    div: torch.Tensor,
+    is_call: torch.Tensor,
+    exercise: str,
+    num_steps: int,
+) -> torch.Tensor:
     dt = expiry / num_steps
     growth = torch.exp((rate - div) * dt)
     discount = torch.exp(-rate * dt)
@@ -72,7 +82,17 @@ def _crr(spot, strike, expiry, rate, vol, div, is_call, exercise, num_steps):
     return values[..., 0]
 
 
-def _trinomial(spot, strike, expiry, rate, vol, div, is_call, exercise, num_steps):
+def _trinomial(
+    spot: torch.Tensor,
+    strike: torch.Tensor,
+    expiry: torch.Tensor,
+    rate: torch.Tensor,
+    vol: torch.Tensor,
+    div: torch.Tensor,
+    is_call: torch.Tensor,
+    exercise: str,
+    num_steps: int,
+) -> torch.Tensor:
     dt = expiry / num_steps
     dx = vol * torch.sqrt(3.0 * dt)
     discount = torch.exp(-rate * dt)

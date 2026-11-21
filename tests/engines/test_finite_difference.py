@@ -29,7 +29,7 @@ def _process(spot, rate, div, vol):
 
 
 def _fd(**kwargs):
-    defaults = dict(num_space=NODES, num_time=NODES, rannacher_steps=2, theta=0.5)
+    defaults = dict(num_space=NODES, num_time=NODES, rannacher_steps=2, theta=_t(0.5))
     defaults.update(kwargs)
     return fd_price(**defaults)
 

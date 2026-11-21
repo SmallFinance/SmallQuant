@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
 
 
 def exercise_index(
     paths: torch.Tensor,
     times: torch.Tensor,
-    intrinsic,
+    intrinsic: Callable[[torch.Tensor], torch.Tensor],
     rate: torch.Tensor,
-    degree: int = 2,
-    exercisable: torch.Tensor | None = None,
-):
+    degree: int  = 2,
+    exercisable: torch.Tensor | None  = None,
+) -> torch.Tensor:
     """Exercise time index per path. The regression is under ``no_grad``.
 
     The basis is monomials ``1, x, ..., x^degree`` in the spot, fitted on the
@@ -48,7 +50,7 @@ def exercise_index(
     return when
 
 
-def discounted_exercise(paths, times, intrinsic, rate, when):
+def discounted_exercise(paths: torch.Tensor, times: torch.Tensor, intrinsic: Callable[[torch.Tensor], torch.Tensor], rate: torch.Tensor, when: torch.Tensor) -> torch.Tensor:
     """Discounted intrinsic value at the frozen exercise index."""
     spot = paths[..., 0]
     num_paths = spot.shape[0]

@@ -56,7 +56,7 @@ class NormalStream:
         device: torch.device,
         antithetic: bool = False,
         method: str = "pseudo",
-    ):
+    ) -> None:
         if num_paths < 1 or num_steps < 1 or dim < 1:
             raise ValueError("num_paths, num_steps and dim must be positive")
         if method not in ("pseudo", "sobol"):
@@ -137,7 +137,9 @@ class _PseudoCursor:
     ``slice`` only moves forward. Skipping discards blocks instead of storing them.
     """
 
-    def __init__(self, base: int, num_steps: int, dim: int, seed: int, dtype: torch.dtype, device: torch.device):
+    def __init__(
+        self, base: int, num_steps: int, dim: int, seed: int, dtype: torch.dtype, device: torch.device
+    ) -> None:
         self.base = base
         self.num_steps = num_steps
         self.dim = dim
@@ -187,7 +189,14 @@ class _PseudoCursor:
         return piece
 
 
-def _sobol_draw(engine, count, num_steps, dim, dtype, device) -> torch.Tensor:
+def _sobol_draw(
+    engine: torch.quasirandom.SobolEngine,
+    count: int,
+    num_steps: int,
+    dim: int,
+    dtype: torch.dtype,
+    device: torch.device,
+) -> torch.Tensor:
     """Scrambled Sobol normals. The engine is drawn on CPU so the stream ignores device."""
     from .distributions import normal_icdf
 
