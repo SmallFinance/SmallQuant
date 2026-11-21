@@ -27,7 +27,7 @@ import math
 
 import torch
 
-from smallquant._tensor import align, check
+from smallquant._tensor import align, check, iteration_budget
 from smallquant.black_scholes.vanilla_prices import _flag, option_price
 from smallquant.math.distributions import bivariate_west, normal_cdf, normal_pdf
 
@@ -78,7 +78,7 @@ def adesi_whaley(
     vol: torch.Tensor,
     div: torch.Tensor,
     is_call: torch.Tensor | bool,
-    max_iter: int = 20,
+    max_iter: torch.Tensor | None = None,
     dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     """American option price by the Barone-Adesi and Whaley (1987) approximation.
@@ -87,7 +87,7 @@ def adesi_whaley(
     term scaled away, giving ``A * (S / S*)**q`` above the European price. The
     critical price ``S*`` solves the value-matching condition (BAW 1987, eqs. 24 and
     27 for calls, 26 and 29 for puts) by Newton's method from the seed of section
-    II.B. Newton runs ``max_iter`` steps under ``torch.no_grad``, then one step
+    II.B. Newton runs each element's ``max_iter`` steps under ``torch.no_grad``, then one step
     with gradients on from the detached root, so derivatives of ``S*`` are the
     implicit-function-theorem ones rather than an unrolled solver.
 
@@ -102,7 +102,8 @@ def adesi_whaley(
         vol: lognormal volatility, positive
         div: continuous dividend yield
         is_call: bool or bool tensor, true for a call
-        max_iter: Newton steps for the critical price, run without gradients
+        max_iter: Newton steps for the critical price, a tensor broadcast with the inputs,
+            or ``None`` for 20. Run without gradients. Each option takes at most its own count
         dtype: optional dtype for the computation
 
     Returns:
@@ -116,6 +117,11 @@ def adesi_whaley(
     """
     spot, strike, expiry, rate, vol, div, is_call = _prepare(
         spot, strike, expiry, rate, vol, div, is_call, dtype
+    )
+    budget = iteration_budget(max_iter, spot, 20)
+    spot, strike, expiry, rate, vol, div, is_call = (
+        torch.broadcast_to(tensor, budget.shape)
+        for tensor in (spot, strike, expiry, rate, vol, div, is_call)
     )
     one = torch.ones_like(spot)
     sign = torch.where(is_call, one, -one)
@@ -178,9 +184,11 @@ def adesi_whaley(
             s_inf + (strike - s_inf) * torch.exp(h),
         )
         floor = strike * 1e-12
-        for _ in range(max_iter):
+        limit = int(budget.amax()) if budget.numel() else 0
+        for index in range(limit):
             f, slope = residual(s)
-            s = torch.maximum(s - f / slope, floor)
+            updated = torch.maximum(s - f / slope, floor)
+            s = torch.where(index < budget, updated, s)
 
     s0 = s.detach()
     f, slope = residual(s0)

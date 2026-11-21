@@ -112,6 +112,22 @@ def check(name: str, tensor: torch.Tensor, ok: torch.Tensor) -> None:
         raise ValueError(f"{name} failed a value check on {count} element(s)")
 
 
+def iteration_budget(count: torch.Tensor | None, like: torch.Tensor, default: int) -> torch.Tensor:
+    """Per-element iteration count broadcast with ``like``. ``None`` is ``default``.
+
+    The result is ``int64``. A solver runs ``count.amax()`` steps and holds each
+    element once its own count is used.
+    """
+    if count is None:
+        steps = torch.full(like.shape, default, dtype=torch.long, device=like.device)
+    else:
+        aligned = align(count, like)[0]
+        shape = torch.broadcast_shapes(aligned.shape, like.shape)
+        steps = torch.broadcast_to(aligned, shape).round().to(dtype=torch.long)
+    check("max_iter", steps, steps >= 0)
+    return steps
+
+
 def _cast(value: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
     if value.dtype == torch.bool or value.dtype == dtype:
         return value

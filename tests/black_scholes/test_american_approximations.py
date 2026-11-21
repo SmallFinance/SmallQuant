@@ -101,7 +101,10 @@ def test_adesi_whaley_newton_converged():
     """Twenty Newton steps already sit on the root: more steps change nothing."""
     inputs = _batch(BAW_GRID)
     assert torch.allclose(
-        adesi_whaley(**inputs, max_iter=20), adesi_whaley(**inputs, max_iter=60), rtol=1e-13, atol=1e-13
+        adesi_whaley(**inputs, max_iter=torch.full_like(inputs["spot"], 20)),
+        adesi_whaley(**inputs, max_iter=torch.full_like(inputs["spot"], 60)),
+        rtol=1e-13,
+        atol=1e-13,
     )
 
 

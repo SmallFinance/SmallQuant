@@ -266,10 +266,12 @@ relative accuracy. The functions live in `sq.math.distributions`; they are not r
 from `sq.math`.
 
 **MTH-02 Confirmed requirement.** `roots.newton(residual, x0, params, *, tol=None,
-max_iter=50)` and `roots.brent(residual, lo, hi, params, *, tol=None, max_iter=100)` are
-batched, run a fixed maximum iteration count with a convergence mask, and never sync to the
-host inside the loop. `tol` is a tensor broadcast with the unknown, or `None` for `1e-12`
-on every element. An element holds its value once its residual is within its own `tol`.
+max_iter=None)` and `roots.brent(residual, lo, hi, params, *, tol=None, max_iter=None)` are
+batched and carry a convergence mask. `tol` is a tensor broadcast with the unknown, or
+`None` for `1e-12` on every element. An element holds its value once its residual is within
+its own `tol`. `max_iter` is a tensor broadcast with the unknown, or `None` for `50`
+(Newton) or `100` (Brent). Each element takes at most its own count. The loop runs to the
+largest count, read once before the loop, and never syncs to the host inside the loop.
 `params` carries the tensors the implicit-function backward differentiates. `brent` is
 bisection with a Newton trial step, not Brent's method; the name stays. Defect at
 `fae8063`: `newton` clamps the slope to at least 1e-14, so it fails on decreasing residuals.
@@ -401,10 +403,12 @@ exactly, with no unrolled graph.
 **VOL-01 Confirmed requirement.** `sq.black_scholes.implied_vol(price, *, strike, expiry,
 is_call=True, spot=None, forward=None, rate=None, div=None, discount=None,
 underlying_distribution=UnderlyingDistribution.LOGNORMAL,
-method=ImpliedVolMethod.NEWTON, tol=None, max_iter=50, dtype=None)` solves a whole chain in
+method=ImpliedVolMethod.NEWTON, tol=None, max_iter=None, dtype=None)` solves a whole chain in
 one call. `tol` is a tensor broadcast with the chain, or `None` for `1e-12` (lognormal) or
 `1e-10` (normal) on every element. Each element holds its volatility once its price error
-is within its own `tol`. Inputs follow `option_price` (MOD-04);
+is within its own `tol`. `max_iter` is a tensor broadcast with the chain, or `None` for
+`50`. Each element takes at most its own number of Newton steps. Inputs follow
+`option_price` (MOD-04);
 `underlying_distribution=NORMAL` gives Bachelier volatility.
 
 **VOL-02 Confirmed requirement.** `method=NEWTON` (default): rational initial guess, then

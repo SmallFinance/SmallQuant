@@ -37,7 +37,7 @@ def implied_vol(
     underlying_distribution: UnderlyingDistribution = UnderlyingDistribution.LOGNORMAL,
     method: ImpliedVolMethod = ImpliedVolMethod.NEWTON,
     tol: torch.Tensor | None = None,
-    max_iter: int = 50,
+    max_iter: torch.Tensor | None = None,
     dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     """Implied volatility of a chain of European prices.
@@ -47,7 +47,8 @@ def implied_vol(
     (default, exact) or ``ImpliedVolMethod.FAST_APPROX`` (lognormal only, no iterations).
     ``tol`` is a tensor broadcast with the chain, or ``None`` for ``1e-12`` (lognormal) or
     ``1e-10`` (normal). Each option stops once its price error is within its own ``tol``.
-    ``max_iter`` is the shared step count. Both apply to Newton only.
+    ``max_iter`` is a tensor broadcast with the chain, or ``None`` for ``50`` Newton steps
+    on every option. Each option takes at most its own count. Both apply to Newton only.
 
     Example:
         >>> implied_vol(price, spot=spot, strike=strike, expiry=expiry, rate=rate,
